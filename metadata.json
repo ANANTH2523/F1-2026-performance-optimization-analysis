@@ -1,0 +1,5 @@
+{
+  "name": "F1 2026 Regulation performance analyzing model",
+  "description": "An application to analyze and optimize F1 car designs based on the new 2026 regulations using AI. Adjust key parameters like aerodynamics, power unit, weight to get performance feedback and efficiency recommendations etc.",
+  "requestFramePermissions": []
+}
