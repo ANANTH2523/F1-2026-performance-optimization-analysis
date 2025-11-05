@@ -1,197 +1,158 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CarParameters, AnalysisResult, Annotation } from '../types';
+import { CarParameters, AnalysisResult } from './types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const analysisResultSchema = {
-    type: Type.OBJECT,
-    properties: {
-        text: {
-            type: Type.STRING,
-            description: "A detailed textual analysis of the car's performance characteristics, strengths, and weaknesses. Use markdown-like formatting: **Title** for headings, and '-' for list items."
-        },
-        metrics: {
-            type: Type.OBJECT,
-            properties: {
-                lapTimePotential: { type: Type.NUMBER, description: 'Scale of 1-100, lower is better.' },
-                topSpeedKmh: { type: Type.NUMBER, description: 'The car\'s estimated top speed in km/h.' },
-                maxCorneringG: { type: Type.NUMBER, description: 'The maximum lateral G-force the car can sustain in corners.' },
-                tyreWearIndex: { type: Type.NUMBER, description: 'A score from 1-100 indicating how quickly the tyres will degrade. Higher is worse.' },
-                brakingEfficiency: { type: Type.NUMBER, description: 'A score from 1-100 indicating the car\'s braking performance and stability. Higher is better.' },
-                lowSpeedGrip: { type: Type.NUMBER, description: 'A score from 1-100 indicating mechanical grip in slow corners. Higher is better.' },
-                energyRecoveryEfficiency: { type: Type.NUMBER, description: 'A score from 1-100 for the efficiency of the MGU-K in harvesting and deploying energy. Higher is better.' },
-                tractionScore: { type: Type.NUMBER, description: 'A score from 1-100 for the car\'s ability to apply power on corner exit without wheelspin. Higher is better.' },
-            },
-            required: ['lapTimePotential', 'topSpeedKmh', 'maxCorneringG', 'tyreWearIndex', 'brakingEfficiency', 'lowSpeedGrip', 'energyRecoveryEfficiency', 'tractionScore'],
-        }
+const responseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    metrics: {
+      type: Type.OBJECT,
+      properties: {
+        topSpeedKmh: { type: Type.NUMBER, description: 'Estimated top speed in km/h on a long straight.' },
+        brakingEfficiency: { type: Type.NUMBER, description: 'Braking performance score (0-100), considering stability and deceleration.' },
+        maxCorneringG: { type: Type.NUMBER, description: 'Maximum lateral G-force achievable in high-speed corners.' },
+        lowSpeedGrip: { type: Type.NUMBER, description: 'Mechanical grip score (0-100) in slow corners.' },
+        tractionScore: { type: Type.NUMBER, description: 'Traction score (0-100) out of slow corners.' },
+        tyreWearIndex: { type: Type.NUMBER, description: 'Tyre wear index (1-10), where 1 is minimal wear and 10 is very high wear.' },
+        energyRecoveryEfficiency: { type: Type.NUMBER, description: 'Efficiency of the MGU-K energy recovery system (0-100).' },
+        lapTimePotential: { type: Type.NUMBER, description: 'An index of overall lap time potential (1-10), where 1 is fastest and 10 is slowest.' },
+        chassisResponsiveness: { type: Type.NUMBER, description: 'Agility and responsiveness of the chassis score (0-100).' },
+        highSpeedStability: { type: Type.NUMBER, description: 'Aerodynamic stability score (0-100) in high-speed sections.' },
+      },
+      required: [
+        "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip", 
+        "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency", 
+        "lapTimePotential", "chassisResponsiveness", "highSpeedStability"
+      ]
     },
-    required: ['text', 'metrics']
+    analysis: {
+      type: Type.STRING,
+      description: 'A detailed analysis (5-7 paragraphs) of the car\'s performance characteristics, strengths, and weaknesses based on the provided parameters. Use markdown for formatting with headings like **Overall Assessment**, **Strengths**, **Weaknesses**, and **Optimization Suggestions**. List key points under each heading.'
+    }
+  },
+  required: ['metrics', 'analysis']
 };
 
-const annotationsSchema = {
-    type: Type.ARRAY,
-    items: {
-        type: Type.OBJECT,
-        properties: {
-            partName: { type: Type.STRING, description: 'The name of the F1 car component.' },
-            description: { type: Type.STRING, description: 'A brief, one-sentence description of the primary change or impact on this component based on the parameters.' }
-        },
-        required: ['partName', 'description']
-    }
+const buildAnalysisPrompt = (params: CarParameters): string => {
+  return `
+    Analyze the performance of an F1 car designed for the 2026 regulations based on the following parameters.
+
+    **2026 Regulation Context:**
+    - **Engine:** 50% ICE (Internal Combustion Engine), 50% Electric (MGU-K). Total power around 1000hp. MGU-K power increased to 350kW.
+    - **Chassis:** Smaller and lighter cars. Wheelbase reduced from 3600mm to 3400mm. Width reduced from 2000mm to 1900mm. Minimum weight reduced by ~40-50kg.
+    - **Aerodynamics:** Active aerodynamics with movable front and rear wings. 'Z-mode' for high downforce in corners, 'X-mode' for low drag on straights. Simpler endplates and reduced outwash to minimize dirty air.
+    - **Tyres:** Narrower tyres than the current generation.
+
+    **Car Parameters for Analysis:**
+    - Aero Downforce Level (20-100): ${params.aeroDownforce} (Higher means more cornering grip but more drag)
+    - Aero Drag Level (20-100): ${params.aeroDrag} (Lower means higher top speed but less downforce)
+    - Suspension Stiffness (20-100): ${params.suspensionStiffness} (Affects mechanical grip and stability)
+    - Tyre Compound (1-Soft to 5-Hard): ${params.tyreCompound}
+    - ICE Power (kW): ${params.enginePowerICE}
+    - MGU-K Power (kW): ${params.enginePowerMGU}
+    - Battery Energy Deployment (% per lap): ${params.batteryEnergyDeployment}
+    - Chassis Weight (kg): ${params.chassisWeightKg}
+
+    **Your Task:**
+    1.  Provide a JSON object containing a 'metrics' object and an 'analysis' string.
+    2.  The 'metrics' object must contain the calculated performance metrics based on the car parameters and regulation context. Adhere strictly to the provided schema.
+    3.  The 'analysis' string should be a detailed, insightful report. Explain the trade-offs in this car's design. Discuss its likely performance profile on different track types (e.g., high-speed like Monza vs. twisty like Monaco). Provide concrete optimization suggestions.
+    
+    Return ONLY the JSON object.
+  `;
 };
+
+const buildAeroImagePrompt = (params: CarParameters): string => {
+    return `
+    Create a hyper-realistic, high-fidelity CFD (Computational Fluid Dynamics) visualization of the aerodynamic flow around a 2026-spec Formula 1 car.
+
+    **Visual Style:**
+    - **Primary Goal:** Mimic the output of professional engineering simulation software. This is a technical diagram, not an artistic race scene.
+    - **Background:** Simple, dark, neutral background (dark gray or black).
+    - **Car Representation:** The car should be a semi-transparent, ghost-like silhouette or an occlusion shadow. The focus is entirely on the airflow.
+
+    **Aerodynamic Flow Details (CRITICAL):**
+    - **Streamlines:** Render dense, precise, and thin streamlines.
+    - **Color Mapping:** Use a standard scientific "Jet" colormap for air pressure.
+        - **High Pressure (Red, Orange):** On the front wing leading edge and nose cone.
+        - **Low Pressure (Blue, Cyan):** CRITICAL for downforce. Emphasize intense blue low-pressure zones under the car (ground effect from Venturi tunnels) and underneath the rear wing.
+    - **Wake & Turbulence:** Show a complex, turbulent wake behind the car. The size and intensity MUST directly correlate with the 'Aero Drag' parameter (${params.aeroDrag}/100). High drag means a large, chaotic wake. Low drag means a clean, narrow wake (representing 'X-mode').
+
+    **Parameter Influence:**
+    - **Aero Downforce (${params.aeroDownforce}/100):** A high value must result in much more intense blue (low pressure) under the car and wings, and more aggressively angled wing elements on the silhouette (representing 'Z-mode').
+
+    The output must be a single, high-quality side-profile image.
+  `;
+};
+
 
 export const analyzeCarPerformance = async (params: CarParameters): Promise<AnalysisResult> => {
-  const model = "gemini-2.5-pro";
-  const systemInstruction = "You are an expert F1 race engineer and performance analyst. Your task is to analyze a car configuration for the 2026 regulations and provide a detailed performance breakdown. You must return your analysis in a specific JSON format containing both a textual summary and key performance metrics.";
-  const prompt = `Analyze the following F1 car configuration: ${JSON.stringify(params, null, 2)}. Provide a detailed analysis of its expected performance, including its strengths and weaknesses on different track types. Explain how the parameters interact. For the textual analysis, use markdown-like formatting with **Bold Headings** and bullet points starting with '- '.`;
-
   try {
+    const model = 'gemini-2.5-pro';
+    const prompt = buildAnalysisPrompt(params);
+
     const response = await ai.models.generateContent({
       model: model,
       contents: prompt,
       config: {
-        systemInstruction: systemInstruction,
         responseMimeType: "application/json",
-        responseSchema: analysisResultSchema,
+        responseSchema: responseSchema,
+        temperature: 0.5,
       },
     });
 
-    const jsonText = response.text.trim();
-    // Basic check for JSON structure
-    if (!jsonText.startsWith('{') || !jsonText.endsWith('}')) {
-        throw new Error("Invalid JSON response from API. The model may have failed to follow instructions.");
+    const jsonText = response.text;
+    if (!jsonText) {
+        throw new Error("API returned an empty response for analysis.");
+    }
+    
+    const result = JSON.parse(jsonText);
+
+    if (!result.metrics || !result.analysis) {
+        throw new Error("Invalid response format from API.");
     }
 
-    const result: AnalysisResult = JSON.parse(jsonText);
-    return result;
+    return result as AnalysisResult;
+
   } catch (error) {
-    console.error("Error analyzing car performance:", error);
-    throw new Error("Failed to get analysis from AI. Please check the console for more details.");
+    console.error('Error analyzing car performance:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    throw new Error(`Failed to get analysis from Gemini API: ${errorMessage}`);
   }
 };
 
-export const getF1Annotations = async (params: CarParameters): Promise<Annotation[]> => {
-    const model = "gemini-2.5-pro";
-    const systemInstruction = "You are an F1 technical analyst. Your task is to identify the car components most affected by a given set of parameters and provide a brief technical summary for each. You must only return JSON.";
-    const prompt = `
-        Based on the F1 car parameters below, identify the 5 most impacted components.
-        For each, provide a 'partName' and a brief, one-sentence 'description' of the impact.
-        
-        **CRUCIAL**: Only use 'partName' values from this exact list: 
-        ['Front Wing', 'Rear Wing', 'Underbody / Floor', 'Sidepods', 'Power Unit', 'Chassis / Weight']
-
-        Parameters:
-        ${JSON.stringify(params, null, 2)}
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: annotationsSchema,
-            },
-        });
-        const jsonText = response.text.trim();
-        const result: Annotation[] = JSON.parse(jsonText);
-        return result;
-    } catch (error) {
-        console.error("Error generating F1 annotations:", error);
-        throw new Error("Failed to generate annotations from AI.");
-    }
-};
-
-
 export const generateAeroFlowImage = async (params: CarParameters): Promise<string> => {
-    const model = 'gemini-2.5-flash-image';
-    const prompt = `
-      **Technical Directive: High-Fidelity CFD Aerodynamic Visualization**
-
-      **1. CORE MANDATE**
-         - **Output**: A single, ultra-high-detail, scientifically-plausible PNG image that mimics a professional Computational Fluid Dynamics (CFD) simulation.
-         - **CRUCIAL**: The background MUST be 100% transparent.
-         - **CRUCIAL**: DO NOT render the car itself. Instead, render a very subtle, dark-grey, semi-transparent 'occlusion shadow' where the car body would be. This provides context for the airflow interacting with a solid object without drawing the car. The silhouette must be of a 2026-spec F1 car, facing left.
-
-      **2. VISUAL STYLE: "CFD SCIENTIFIC VISUALIZATION"**
-         - **Flow Representation**: Render the airflow as dense, thin, and precise streamlines or ribbons. Avoid overly artistic 'glow' or 'bloom' effects. The visualization must look like scientific data, not an energy field.
-         - **Color Mapping**: Use a standard 'Jet' (or 'Rainbow') colormap to represent air pressure. The gradient MUST be smooth.
-            - **VERY HIGH PRESSURE**: Deep Red (e.g., front wing stagnation point).
-            - **MODERATE PRESSURE**: Orange / Yellow.
-            - **AMBIENT/NEUTRAL PRESSURE**: Green.
-            - **LOW PRESSURE**: Cyan.
-            - **VERY LOW PRESSURE (HIGH VELOCITY)**: Deep, vibrant Blue (e.g., underbody Venturi tunnels).
-
-      **3. PARAMETER-DRIVEN AERODYNAMIC PHENOMENA (Current: Downforce=${params.aeroDownforce}, Drag=${params.aeroDrag})**
-
-         **3.1. GROUND EFFECT (TIED TO DOWNFORCE):**
-            - This is the most critical feature. Clearly resolve the high-velocity, low-pressure stream (deep blue) being sucked into the large Venturi tunnel inlets and accelerating dramatically under the car.
-            - The intensity of the blue and the velocity of the streamlines under the car MUST be directly proportional to the **Downforce (${params.aeroDownforce}/100)** setting.
-
-         **3.2. WAKE & VORTICES (TIED TO DRAG):**
-            - The **Drag (${params.aeroDrag}/100)** parameter dictates the wake's character.
-            - **High Drag**: A large, chaotic, turbulent wake ("dirty air"). This MUST feature clearly-defined vortical structures, visualized as helical/swirling streamlines trailing from the rear wing tips and rear wheel areas. The wake should be wide and messy.
-            - **Low Drag**: A much narrower, cleaner, and more organized wake with minimal visible vortices and turbulence. The streamlines should be more parallel and less chaotic.
-
-         **3.3. OUTWASH & WING ELEMENTS:**
-            - Show a significant portion of the airflow from the front wing being directed outwards ("outwash") around the front wheels.
-            - Show smaller, coherent vortical structures peeling off the tips of the front and rear wing elements.
-
-      **4. FINAL CHECK:** The image must be a visually impressive and aerodynamically insightful CFD-style representation of airflow around an F1 car, on a transparent background, accurately reflecting the specified parameters, pressure zones, and key aerodynamic phenomena like ground effect and wake turbulence.
-    `;
-    
     try {
+        const model = 'gemini-2.5-flash-image';
+        const prompt = buildAeroImagePrompt(params);
+
         const response = await ai.models.generateContent({
             model: model,
-            contents: { parts: [{ text: prompt }] },
+            contents: {
+                parts: [{ text: prompt }],
+            },
             config: {
                 responseModalities: [Modality.IMAGE],
             },
         });
-        
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                return part.inlineData.data;
-            }
+
+        const firstPart = response.candidates?.[0]?.content?.parts?.[0];
+
+        if (firstPart && firstPart.inlineData) {
+            const base64ImageBytes = firstPart.inlineData.data;
+            return `data:image/png;base64,${base64ImageBytes}`;
+        } else {
+             const blockReason = response.candidates?.[0]?.finishReason;
+             if (blockReason === 'SAFETY' || blockReason === 'RECITATION' || blockReason === 'OTHER') {
+                 throw new Error(`Image generation was blocked by the API. Reason: ${blockReason}`);
+             }
+            throw new Error('No image data received from the API.');
         }
-        throw new Error("No image data was generated.");
+
     } catch (error) {
-        console.error("Error generating aero flow image:", error);
-        throw new Error("Failed to generate aerodynamic visualization.");
+        console.error('Error generating aero flow image:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+        throw new Error(`Failed to generate aero flow image: ${errorMessage}`);
     }
-};
-
-export const getF1ComponentSpecs = async (partName: string, params: CarParameters): Promise<string> => {
-  const model = "gemini-2.5-pro";
-  const systemInstruction = `You are an expert F1 technical analyst. Your task is to provide a detailed technical specification and explanation for a specific F1 car component, considering the provided overall car parameters. The explanation should be accessible but technically rich. Use markdown formatting with '##' for subheadings and '-' for list items.`;
-  const prompt = `
-    Provide a detailed technical deep-dive for the following F1 component: **${partName}**.
-
-    The component is part of a 2026-spec car with the following overall configuration:
-    ${JSON.stringify(params, null, 2)}
-
-    Your analysis should cover:
-    1.  **Primary Function**: What is its main role on the car?
-    2.  **2026 Regulation Impact**: How do the 2026 regulations specifically affect the design and function of this part?
-    3.  **Interaction with Car Parameters**: Explain how this component's performance is influenced by or influences the provided car parameters (e.g., how does the front wing design relate to aero downforce and drag?).
-    4.  **Design Considerations**: What are the key materials, design trade-offs, and manufacturing complexities for this component?
-
-    Format the response clearly using markdown.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-      },
-    });
-
-    return response.text.trim();
-  } catch (error) {
-    console.error(`Error generating specs for ${partName}:`, error);
-    throw new Error(`Failed to get technical specs for ${partName} from AI.`);
-  }
 };

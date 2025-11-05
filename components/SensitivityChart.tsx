@@ -23,7 +23,6 @@ const PARAM_CONFIG: Record<AnalyzableParam, { name: string, min: number, max: nu
   chassisWeightKg: { name: 'Chassis Weight', min: 700, max: 740, unit: 'kg' },
 };
 
-// Fix: Add missing metrics to METRIC_CONFIG to satisfy the Record type.
 const METRIC_CONFIG: Record<PlottableMetric, { name: string, higherIsBetter: boolean }> = {
     lapTimePotential: { name: 'Lap Potential', higherIsBetter: false },
     topSpeedKmh: { name: 'Top Speed (km/h)', higherIsBetter: true },
@@ -33,6 +32,8 @@ const METRIC_CONFIG: Record<PlottableMetric, { name: string, higherIsBetter: boo
     lowSpeedGrip: { name: 'Low Speed Grip', higherIsBetter: true },
     energyRecoveryEfficiency: { name: 'Energy Recovery', higherIsBetter: true },
     tractionScore: { name: 'Traction Score', higherIsBetter: true },
+    chassisResponsiveness: { name: 'Chassis Responsiveness', higherIsBetter: true },
+    highSpeedStability: { name: 'High-Speed Stability', higherIsBetter: true },
 };
 
 
@@ -61,10 +62,18 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
 
       const results = await Promise.all(promises);
       
-      const chartData = results.map((result, index) => ({
-        paramValue: paramValues[index],
-        metrics: result.metrics,
-      }));
+      const chartData = results
+        // Add robust filtering to prevent crashes from bad API responses
+        .filter(result => result && result.metrics) 
+        .map((result, index) => ({
+          paramValue: paramValues[index],
+          metrics: result.metrics,
+        }));
+
+      if (chartData.length < results.length) {
+        console.warn("Some sensitivity analysis points were filtered out due to invalid data.");
+      }
+
       setData(chartData);
 
     } catch (err) {
@@ -76,6 +85,7 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
   
   const chartData = useMemo(() => {
     if (!data) return [];
+    // The filter in handleAnalyzeSensitivity ensures d.metrics is always defined here
     return data.map(d => ({
         paramValue: d.paramValue,
         ...d.metrics,
@@ -145,7 +155,7 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
                   borderRadius: '0.5rem',
                 }}
                 labelStyle={{ color: '#ffffff', fontWeight: 'bold' }}
-                formatter={(value: number, name: string) => [value.toFixed(2), name]}
+                formatter={(value: number, name: string) => [value && typeof value.toFixed === 'function' ? value.toFixed(2) : value, name]}
               />
               <Legend wrapperStyle={{paddingTop: '20px'}} />
               {Object.entries(METRIC_CONFIG).map(([key, {name}], index) => (
@@ -155,7 +165,7 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
                     type="monotone" 
                     dataKey={key} 
                     name={name}
-                    stroke={['#3b82f6', '#84cc16', '#ef4444', '#f97316', '#eab308', '#a855f7'][index % 6]} 
+                    stroke={['#3b82f6', '#84cc16', '#ef4444', '#f97316', '#eab308', '#a855f7', '#14b8a6', '#ec4899', '#6366f1', '#f472b6'][index % 10]} 
                     strokeWidth={2}
                     dot={{ r: 4 }}
                 />

@@ -1,42 +1,28 @@
-// Define the structure for the car's parameters
 export interface CarParameters {
-  aeroDownforce: number;
-  aeroDrag: number;
-  powerUnitKW: number;
-  mguKPowerKW: number;
-  chassisWeightKg: number;
-  weightDistribution: number;
-  activeAeroMode: 'Z-mode' | 'X-mode';
-  suspensionStiffness: number; // New parameter
-  batteryEnergyDeployment: number; // New parameter
+  aeroDownforce: number; // 20-100 scale
+  aeroDrag: number; // 20-100 scale (inversely related to downforce)
+  suspensionStiffness: number; // 20-100 scale
+  tyreCompound: number; // 1 (soft) to 5 (hard)
+  enginePowerICE: number; // 500-550 kW
+  enginePowerMGU: number; // 300-350 kW
+  batteryEnergyDeployment: number; // 50-100%
+  chassisWeightKg: number; // 720-760 kg
 }
 
-// A named configuration preset
-export interface Preset {
-  name: string;
-  params: CarParameters;
-}
-
-// Structured performance metrics estimated by the AI
 export interface PerformanceMetrics {
-  lapTimePotential: number; // Scale of 1-100, lower is better
   topSpeedKmh: number;
+  brakingEfficiency: number; // 0-100 scale
   maxCorneringG: number;
-  tyreWearIndex: number; // Scale of 1-100, higher is worse
-  brakingEfficiency: number; // Scale of 1-100, higher is better (New)
-  lowSpeedGrip: number; // Scale of 1-100, higher is better (New)
-  energyRecoveryEfficiency: number; // Scale of 1-100, higher is better
-  tractionScore: number; // Scale of 1-100, higher is better
+  lowSpeedGrip: number; // 0-100 scale
+  tractionScore: number; // 0-100 scale
+  tyreWearIndex: number; // 1-10 scale (lower is better wear)
+  energyRecoveryEfficiency: number; // 0-100 scale
+  lapTimePotential: number; // 1-10 scale (lower is better time)
+  chassisResponsiveness: number; // 0-100 scale
+  highSpeedStability: number; // 0-100 scale
 }
 
-// The combined result from the analysis service
 export interface AnalysisResult {
-  text: string;
   metrics: PerformanceMetrics;
-}
-
-// Annotation for a specific part of the car visualization
-export interface Annotation {
-  partName: string;
-  description: string;
+  analysis: string;
 }

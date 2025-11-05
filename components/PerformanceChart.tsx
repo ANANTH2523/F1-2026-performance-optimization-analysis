@@ -19,6 +19,8 @@ const PerformanceChart: React.FC<PerformanceChartProps> = ({ metrics }) => {
       { subject: 'Tyre Life', value: 100 - (m.tyreWearIndex - 1), fullMark: 100, unit: '/100', original: m.tyreWearIndex }, // Inverted
       { subject: 'Energy Recov.', value: m.energyRecoveryEfficiency, fullMark: 100, unit: '/100', original: m.energyRecoveryEfficiency },
       { subject: 'Lap Potential', value: 100 - (m.lapTimePotential - 1), fullMark: 100, unit: '/100', original: m.lapTimePotential }, // Inverted
+      { subject: 'Agility', value: m.chassisResponsiveness, fullMark: 100, unit: '/100', original: m.chassisResponsiveness },
+      { subject: 'Stability', value: m.highSpeedStability, fullMark: 100, unit: '/100', original: m.highSpeedStability },
     ];
     // Cap values at 100 to prevent chart distortion
     return data.map(d => ({ ...d, value: Math.min(100, Math.max(0, d.value)) }));

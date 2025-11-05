@@ -1,175 +1,143 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Header from './components/Header';
 import ParameterSlider from './components/ParameterSlider';
 import AnalysisDisplay from './components/AnalysisDisplay';
 import PerformanceChart from './components/PerformanceChart';
-import CarVisualization from './components/CarVisualization';
+import { CarParameters, PerformanceMetrics } from './types';
+import { analyzeCarPerformance, generateAeroFlowImage } from './services/geminiService';
 import Loader from './components/Loader';
 import { AnalyzeIcon } from './components/icons/AnalyzeIcon';
+import CarVisualization from './components/CarVisualization';
 import SensitivityChart from './components/SensitivityChart';
-import ComponentSpecsModal from './components/ComponentSpecsModal';
-import { CarParameters, Preset, AnalysisResult, Annotation } from './types';
-import { analyzeCarPerformance, generateAeroFlowImage, getF1Annotations } from './services/geminiService';
-
-// Default car parameters based on 2026 regulations
-const initialParams: CarParameters = {
-  aeroDownforce: 70,
-  aeroDrag: 60,
-  powerUnitKW: 1000,
-  mguKPowerKW: 350,
-  chassisWeightKg: 722,
-  weightDistribution: 52, // % on rear
-  activeAeroMode: 'Z-mode',
-  suspensionStiffness: 60,
-  batteryEnergyDeployment: 80,
-};
-
-// Example presets
-const presets: Preset[] = [
-  { name: 'Monaco (High Downforce)', params: { ...initialParams, aeroDownforce: 95, aeroDrag: 85, suspensionStiffness: 85 } },
-  { name: 'Monza (Low Drag)', params: { ...initialParams, aeroDownforce: 30, aeroDrag: 25, suspensionStiffness: 40 } },
-  { name: 'Silverstone (Balanced)', params: { ...initialParams, aeroDownforce: 75, aeroDrag: 65, suspensionStiffness: 65 } },
-];
 
 const App: React.FC = () => {
-  const [carParams, setCarParams] = useState<CarParameters>(initialParams);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [params, setParams] = useState<CarParameters>({
+    aeroDownforce: 60,
+    aeroDrag: 55,
+    suspensionStiffness: 70,
+    tyreCompound: 2,
+    enginePowerICE: 530,
+    enginePowerMGU: 350,
+    batteryEnergyDeployment: 90,
+    chassisWeightKg: 725,
+  });
+
+  const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  const [analysis, setAnalysis] = useState<string>('');
   const [flowImageUrl, setFlowImageUrl] = useState<string | null>(null);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
 
-  const handleParamChange = (param: keyof CarParameters, value: number) => {
-    setCarParams(prev => ({ ...prev, [param]: value }));
-  };
+  const handleParamChange = useCallback((param: keyof CarParameters, value: number) => {
+    setParams((prev) => {
+      const newParams = { ...prev, [param]: value };
+      if (param === 'aeroDownforce') {
+        newParams.aeroDrag = Math.max(20, Math.min(100, Math.round(110 - value * 0.9)));
+      }
+      return newParams;
+    });
+  }, []);
 
-  const handlePresetChange = (presetName: string) => {
-    const selectedPreset = presets.find(p => p.name === presetName);
-    if (selectedPreset) {
-      setCarParams(selectedPreset.params);
-    } else {
-      setCarParams(initialParams);
-    }
-  };
-  
   const handleAnalyze = async () => {
     setIsLoading(true);
     setError(null);
-    setAnalysisResult(null);
+    setMetrics(null);
+    setAnalysis('');
     setFlowImageUrl(null);
-    setAnnotations([]);
-    setSelectedAnnotation(null);
-
     try {
-      const [analysis, imageUrl, annotationData] = await Promise.all([
-        analyzeCarPerformance(carParams),
-        generateAeroFlowImage(carParams),
-        getF1Annotations(carParams)
+      const [analysisResult, imageUrl] = await Promise.all([
+        analyzeCarPerformance(params),
+        generateAeroFlowImage(params)
       ]);
-      setAnalysisResult(analysis);
+      setMetrics(analysisResult.metrics);
+      setAnalysis(analysisResult.analysis);
       setFlowImageUrl(imageUrl);
-      setAnnotations(annotationData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setIsLoading(false);
     }
   };
-
+  
   return (
-    <div className="bg-gray-900 min-h-screen text-gray-200 font-sans">
+    <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
       <Header />
-      <main className="container mx-auto p-4 lg:p-8">
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          {/* Controls Column */}
-          <div className="xl:col-span-1 space-y-6 bg-gray-800/50 p-6 rounded-lg border border-gray-700 h-fit">
-            <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">Configuration</h2>
-            <div className="space-y-2">
-              <label className="font-medium text-white">Load Preset</label>
-              <select 
-                onChange={(e) => handlePresetChange(e.target.value)}
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                 <option value="">Custom Configuration</option>
-                 {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-              </select>
-            </div>
-
-            <ParameterSlider label="Aero Downforce" value={carParams.aeroDownforce} min={20} max={100} step={1} unit="/100" description="Overall downforce level. Higher values improve cornering grip." onChange={(v) => handleParamChange('aeroDownforce', v)} tooltipText="Controls the amount of negative lift generated by wings and underbody, pushing the car onto the track. High downforce is crucial for high-speed corners but increases drag." />
-            <ParameterSlider label="Aero Drag" value={carParams.aeroDrag} min={20} max={100} step={1} unit="/100" description="Aerodynamic resistance. Lower values improve top speed." onChange={(v) => handleParamChange('aeroDrag', v)} tooltipText="The force that opposes the car's motion through the air. Minimizing drag is key for tracks with long straights, like Monza." />
-            <ParameterSlider label="PU Power" value={carParams.powerUnitKW} min={900} max={1050} step={5} unit="kW" description="Total power output from the internal combustion engine." onChange={(v) => handleParamChange('powerUnitKW', v)} tooltipText="The primary power source of the car. The 2026 regulations focus on sustainable fuels and maintain high power outputs." />
-            <ParameterSlider label="MGU-K Power" value={carParams.mguKPowerKW} min={300} max={350} step={5} unit="kW" description="Electrical power from the Motor Generator Unit - Kinetic." onChange={(v) => handleParamChange('mguKPowerKW', v)} tooltipText="A key part of the hybrid system, harvesting kinetic energy during braking and deploying it for a significant power boost. The 2026 regulations dramatically increase its contribution." />
-            <ParameterSlider label="Chassis Weight" value={carParams.chassisWeightKg} min={700} max={740} step={1} unit="kg" description="Minimum weight of the car without fuel and driver." onChange={(v) => handleParamChange('chassisWeightKg', v)} tooltipText="A lighter car accelerates and changes direction faster. Teams constantly strive to get as close to the minimum weight limit as possible." />
-            <ParameterSlider label="Suspension Stiffness" value={carParams.suspensionStiffness} min={20} max={100} step={1} unit="/100" description="Stiffness of the suspension system." onChange={(v) => handleParamChange('suspensionStiffness', v)} tooltipText="Determines how much the chassis rolls and pitches. A stiffer setup provides a more responsive but potentially unstable platform, sensitive to bumps." />
-            <ParameterSlider label="Battery Deployment" value={carParams.batteryEnergyDeployment} min={50} max={100} step={1} unit="%" description="Percentage of battery energy deployed per lap." onChange={(v) => handleParamChange('batteryEnergyDeployment', v)} tooltipText="Controls the strategy of how the stored electrical energy is used throughout a lap. Aggressive deployment gives better lap time but may not be sustainable for a full race." />
-
-            <button
-              onClick={handleAnalyze}
-              disabled={isLoading}
-              className="w-full mt-4 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex items-center justify-center text-lg"
+      <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 space-y-6 bg-gray-800/50 p-6 rounded-lg border border-gray-700 h-fit">
+            <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
+                Regulation Parameters
+            </h2>
+          <ParameterSlider
+            label="Aero Downforce"
+            value={params.aeroDownforce}
+            min={20} max={100} step={1} unit=""
+            description="Overall downforce level. Higher improves cornering but increases drag."
+            onChange={(v) => handleParamChange('aeroDownforce', v)}
+            tooltipText="Adjusts the active aero system's baseline for high-downforce 'Z-mode'. Affects grip in medium to high-speed corners."
+          />
+          <ParameterSlider
+            label="Aero Drag"
+            value={params.aeroDrag}
+            min={20} max={100} step={1} unit=""
+            description="Overall drag level. Lower improves top speed. Linked to Downforce."
+            onChange={(v) => handleParamChange('aeroDrag', v)}
+            tooltipText="Represents the car's efficiency in low-drag 'X-mode'. Lower values are crucial for tracks with long straights."
+          />
+          <ParameterSlider
+            label="Suspension Stiffness"
+            value={params.suspensionStiffness}
+            min={20} max={100} step={1} unit=""
+            description="Affects mechanical grip and stability over bumps and kerbs."
+            onChange={(v) => handleParamChange('suspensionStiffness', v)}
+            tooltipText="A stiffer setup provides better aerodynamic platform stability, while a softer one improves ride over bumps and mechanical grip."
+          />
+           <ParameterSlider
+            label="Chassis Weight"
+            value={params.chassisWeightKg}
+            min={720} max={760} step={1} unit="kg"
+            description="Total car weight. Lower weight improves acceleration and braking."
+            onChange={(v) => handleParamChange('chassisWeightKg', v)}
+            tooltipText="Represents the base weight of the car. The 2026 regulations aim for lighter cars, but achieving the minimum weight is a challenge."
+          />
+           <ParameterSlider
+            label="Battery Deployment"
+            value={params.batteryEnergyDeployment}
+            min={50} max={100} step={1} unit="%"
+            description="Percentage of stored energy deployed per lap."
+            onChange={(v) => handleParamChange('batteryEnergyDeployment', v)}
+            tooltipText="Governs the strategy for deploying the 350kW from the MGU-K. A higher percentage gives more power but may drain the battery before the lap ends."
+          />
+           <div className="pt-4">
+             <button
+                onClick={handleAnalyze}
+                disabled={isLoading}
+                className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
             >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <AnalyzeIcon className="w-6 h-6 mr-2" />
-                  Analyze Performance
-                </>
-              )}
+                {isLoading ? 'Analyzing...' : <> <AnalyzeIcon className="w-6 h-6" /> Analyze Performance Matrix </>}
             </button>
-            {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-          </div>
+           </div>
+           {error && <p className="text-red-400 text-center mt-4 text-sm">{error}</p>}
+        </div>
 
-          {/* Results Column */}
-          <div className="xl:col-span-2 space-y-8">
-            {isLoading && <div className="flex justify-center items-center h-full"><Loader /></div>}
-
-            {!isLoading && !analysisResult && (
-                 <div className="text-center text-gray-500 bg-gray-800/50 p-10 rounded-lg border border-gray-700 min-h-[500px] flex flex-col justify-center">
-                    <h2 className="text-3xl font-bold text-white mb-4">Welcome to the F1 2026 Modeler</h2>
-                    <p className="text-lg">Configure your car's parameters on the left and click "Analyze Performance".</p>
-                    <p>The AI will generate a detailed performance breakdown, a performance profile chart, and a dynamic aerodynamic flow visualization.</p>
-                 </div>
+        <div className="lg:col-span-2 space-y-8">
+            {isLoading ? <Loader /> : (
+                <>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+                    <div className="md:col-span-2">
+                        <CarVisualization flowImageUrl={flowImageUrl} />
+                    </div>
+                    <div className="md:col-span-3">
+                        <PerformanceChart metrics={metrics} />
+                    </div>
+                </div>
+                 <AnalysisDisplay analysis={analysis} />
+                </>
             )}
-            
-            {analysisResult && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="lg:col-span-2">
-                  <CarVisualization 
-                    flowImageUrl={flowImageUrl}
-                    annotations={annotations}
-                    onPartClick={(annotation) => setSelectedAnnotation(annotation)}
-                  />
-                </div>
-                <div className="lg:col-span-1">
-                  <PerformanceChart metrics={analysisResult.metrics} />
-                </div>
-                <div className="lg:col-span-1">
-                   {selectedAnnotation ? (
-                      <ComponentSpecsModal
-                        annotation={selectedAnnotation}
-                        carParams={carParams}
-                        onBack={() => setSelectedAnnotation(null)}
-                      />
-                    ) : (
-                      <AnalysisDisplay analysis={analysisResult.text} />
-                    )}
-                </div>
-                  <div className="lg:col-span-2">
-                  <SensitivityChart currentParams={carParams} />
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </main>
+      <footer className="container mx-auto p-4 md:p-8 mt-8">
+           <SensitivityChart currentParams={params} />
+      </footer>
     </div>
   );
 };
