@@ -21,9 +21,20 @@ export interface PerformanceMetrics {
   lapTimePotential: number; // 1-10 scale (lower is better time)
   chassisResponsiveness: number; // 0-100 scale
   highSpeedStability: number; // 0-100 scale
+  simulatedLapTime: string; // e.g., "1:23.456"
 }
 
 export interface AnalysisResult {
   metrics: PerformanceMetrics;
   analysis: string;
+}
+
+export interface Track {
+  id: string;
+  name: string;
+  country: string;
+  type: string;
+  downforceLevel: 'low' | 'medium' | 'high' | 'max';
+  abrasiveness: 'low' | 'medium' | 'high';
+  keyFeatures: string;
 }

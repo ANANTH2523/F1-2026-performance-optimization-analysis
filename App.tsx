@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import ParameterSlider from './components/ParameterSlider';
 import AnalysisDisplay from './components/AnalysisDisplay';
@@ -7,9 +7,13 @@ import { CarParameters, PerformanceMetrics } from './types';
 import { analyzeCarPerformance, generateAeroFlowImage } from './services/geminiService';
 import Loader from './components/Loader';
 import { AnalyzeIcon } from './components/icons/AnalyzeIcon';
+import { ExportIcon } from './components/icons/ExportIcon';
 import CarVisualization from './components/CarVisualization';
 import SensitivityChart from './components/SensitivityChart';
 import TyreAnalysis from './components/TyreAnalysis';
+import KeyMetricsDisplay from './components/KeyMetricsDisplay';
+import { tracks } from './data/tracks';
+import TrackSelector from './components/TrackSelector';
 
 const tyreCompoundTooltip = (
   <div className="text-left">
@@ -38,11 +42,14 @@ const App: React.FC = () => {
     chassisWeightKg: 725,
   });
 
+  const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0].id);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [analysis, setAnalysis] = useState<string>('');
   const [flowImageUrl, setFlowImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId)!, [selectedTrackId]);
 
   const handleParamChange = useCallback((param: keyof CarParameters, value: number) => {
     setParams((prev) => {
@@ -73,9 +80,17 @@ const App: React.FC = () => {
     setMetrics(null);
     setAnalysis('');
     setFlowImageUrl(null);
+
+    const track = tracks.find(t => t.id === selectedTrackId);
+    if (!track) {
+        setError("Selected track not found.");
+        setIsLoading(false);
+        return;
+    }
+
     try {
       const [analysisResult, imageUrl] = await Promise.all([
-        analyzeCarPerformance(params),
+        analyzeCarPerformance(params, track),
         generateAeroFlowImage(params)
       ]);
       setMetrics(analysisResult.metrics);
@@ -87,6 +102,32 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const handleExportCsv = useCallback(() => {
+    if (!metrics) {
+      return;
+    }
+
+    const headers = ["Category", "Parameter", "Value"];
+    const paramRows = Object.entries(params).map(([key, value]) => ["Parameter", key, value]);
+    const metricRows = Object.entries(metrics).map(([key, value]) => ["Metric", key, typeof value === 'number' ? value.toFixed(4) : value]);
+
+    const allRows = [
+        headers,
+        ...paramRows,
+        ...metricRows
+    ];
+
+    const csvContent = allRows.map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `f1_2026_analysis_${selectedTrackId}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [params, metrics, selectedTrackId]);
   
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
@@ -96,6 +137,11 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
                 Regulation Parameters
             </h2>
+          <TrackSelector
+            tracks={tracks}
+            selectedTrackId={selectedTrackId}
+            onSelectTrack={setSelectedTrackId}
+          />
           <ParameterSlider
             label="Front Wing Flap Angle"
             value={params.frontWingFlapAngle}
@@ -177,13 +223,21 @@ const App: React.FC = () => {
             tooltipText="Governs the strategy for deploying the 350kW from the MGU-K. A higher percentage gives more power but may drain the battery before the lap ends."
             optimalRange={[85, 100]}
           />
-           <div className="pt-4">
+           <div className="pt-4 flex items-center gap-4">
              <button
                 onClick={handleAnalyze}
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
+                className="flex-grow w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
             >
                 {isLoading ? 'Analyzing...' : <> <AnalyzeIcon className="w-6 h-6" /> Analyze Performance Matrix </>}
+            </button>
+            <button
+                onClick={handleExportCsv}
+                disabled={!metrics || isLoading}
+                className="shrink-0 py-3 px-4 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
+                title="Export Data as CSV"
+            >
+                <ExportIcon className="w-6 h-6" />
             </button>
            </div>
            {error && <p className="text-red-400 text-center mt-4 text-sm">{error}</p>}
@@ -200,6 +254,7 @@ const App: React.FC = () => {
                         <PerformanceChart metrics={metrics} />
                     </div>
                 </div>
+                 <KeyMetricsDisplay metrics={metrics} trackName={selectedTrack.name} />
                  <TyreAnalysis metrics={metrics} />
                  <AnalysisDisplay analysis={analysis} />
                 </>
@@ -207,7 +262,7 @@ const App: React.FC = () => {
         </div>
       </main>
       <footer className="container mx-auto p-4 md:p-8 mt-8">
-           <SensitivityChart currentParams={params} />
+           <SensitivityChart currentParams={params} selectedTrackId={selectedTrackId} />
       </footer>
     </div>
   );

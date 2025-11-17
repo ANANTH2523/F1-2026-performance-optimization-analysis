@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CarParameters, AnalysisResult } from './types';
+import { CarParameters, AnalysisResult, Track } from './types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -19,36 +19,44 @@ const responseSchema = {
         lapTimePotential: { type: Type.NUMBER, description: 'An index of overall lap time potential (1-10), where 1 is fastest and 10 is slowest.' },
         chassisResponsiveness: { type: Type.NUMBER, description: 'Agility and responsiveness of the chassis score (0-100).' },
         highSpeedStability: { type: Type.NUMBER, description: 'Aerodynamic stability score (0-100) in high-speed sections.' },
+        simulatedLapTime: { type: Type.STRING, description: 'Simulated lap time on the specified benchmark circuit in M:SS.mmm format.' },
       },
       required: [
         "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip", 
         "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency", 
-        "lapTimePotential", "chassisResponsiveness", "highSpeedStability"
+        "lapTimePotential", "chassisResponsiveness", "highSpeedStability", "simulatedLapTime"
       ]
     },
     analysis: {
       type: Type.STRING,
-      description: 'A detailed analysis (5-7 paragraphs) of the car\'s performance characteristics, strengths, and weaknesses based on the provided parameters. Use markdown for formatting with headings like **Overall Assessment**, **Strengths**, **Weaknesses**, and **Optimization Suggestions**. List key points under each heading.'
+      description: 'A detailed analysis (5-7 paragraphs) of the car\'s performance characteristics, strengths, and weaknesses based on the provided parameters AND the specific track. Use markdown for formatting with headings like **Overall Assessment**, **Strengths**, **Weaknesses**, and **Optimization Suggestions**. List key points under each heading.'
     }
   },
   required: ['metrics', 'analysis']
 };
 
-const buildAnalysisPrompt = (params: CarParameters): string => {
+const buildAnalysisPrompt = (params: CarParameters, track: Track): string => {
   return `
-    Analyze the performance of an F1 car designed for the 2026 regulations based on the following parameters.
+    Analyze the performance of an F1 car designed for the 2026 regulations, specifically for the provided benchmark circuit.
 
     **2026 Regulation Context:**
-    - **Engine:** 50% ICE (Internal Combustion Engine), 50% Electric (MGU-K). Total power around 1000hp. MGU-K power increased to 350kW.
-    - **Chassis:** Smaller and lighter cars. Wheelbase reduced from 3600mm to 3400mm. Width reduced from 2000mm to 1900mm. Minimum weight reduced by ~40-50kg.
-    - **Aerodynamics:** Active aerodynamics with movable front and rear wings. 'Z-mode' for high downforce in corners, 'X-mode' for low drag on straights. Simpler endplates and reduced outwash to minimize dirty air.
-    - **Tyres:** Narrower tyres than the current generation.
+    - **Engine:** 50% ICE, 50% Electric. Total power ~1000hp. MGU-K power at 350kW.
+    - **Chassis:** Smaller, lighter cars (Wheelbase 3400mm, Width 1900mm).
+    - **Aerodynamics:** Active aero with 'Z-mode' (high downforce) and 'X-mode' (low drag). Reduced dirty air.
+    - **Tyres:** Narrower tyres.
+
+    **Benchmark Circuit for Simulation:**
+    - **Name:** ${track.name}, ${track.country}
+    - **Type:** ${track.type}
+    - **Downforce Requirement:** ${track.downforceLevel}
+    - **Tyre Abrasiveness:** ${track.abrasiveness}
+    - **Key Features:** ${track.keyFeatures}
 
     **Car Parameters for Analysis:**
-    - Aero Downforce Level (20-100): ${params.aeroDownforce} (Higher means more cornering grip but more drag)
-    - Aero Drag Level (20-100): ${params.aeroDrag} (Lower means higher top speed but less downforce)
-    - Front Wing Flap Angle (degrees): ${params.frontWingFlapAngle} (Directly affects front-end grip and aero balance)
-    - Suspension Stiffness (20-100): ${params.suspensionStiffness} (Affects mechanical grip and stability)
+    - Aero Downforce Level (20-100): ${params.aeroDownforce}
+    - Aero Drag Level (20-100): ${params.aeroDrag}
+    - Front Wing Flap Angle (degrees): ${params.frontWingFlapAngle}
+    - Suspension Stiffness (20-100): ${params.suspensionStiffness}
     - Tyre Compound (1-Soft to 5-Hard): ${params.tyreCompound}
     - ICE Power (kW): ${params.enginePowerICE}
     - MGU-K Power (kW): ${params.enginePowerMGU}
@@ -57,8 +65,9 @@ const buildAnalysisPrompt = (params: CarParameters): string => {
 
     **Your Task:**
     1.  Provide a JSON object containing a 'metrics' object and an 'analysis' string.
-    2.  The 'metrics' object must contain the calculated performance metrics based on the car parameters and regulation context. Adhere strictly to the provided schema.
-    3.  The 'analysis' string should be a detailed, insightful report. Explain the trade-offs in this car's design. Discuss its likely performance profile on different track types (e.g., high-speed like Monza vs. twisty like Monaco). Provide concrete optimization suggestions.
+    2.  The 'metrics' must be calculated based on the car parameters in the context of the **specific track provided**.
+    3.  **Crucially, calculate a 'simulatedLapTime' on the specified track: ${track.name}. The format must be a string "M:SS.mmm".**
+    4.  The 'analysis' string must be a detailed report tailored to the circuit. Explain the trade-offs of this car design *for this track*. Discuss its performance profile (e.g., how it would handle specific corners or straights at ${track.name}). Provide concrete optimization suggestions relevant to the circuit's demands.
     
     Return ONLY the JSON object.
   `;
@@ -89,10 +98,10 @@ const buildAeroImagePrompt = (params: CarParameters): string => {
 };
 
 
-export const analyzeCarPerformance = async (params: CarParameters): Promise<AnalysisResult> => {
+export const analyzeCarPerformance = async (params: CarParameters, track: Track): Promise<AnalysisResult> => {
   try {
     const model = 'gemini-2.5-pro';
-    const prompt = buildAnalysisPrompt(params);
+    const prompt = buildAnalysisPrompt(params, track);
 
     const response = await ai.models.generateContent({
       model: model,

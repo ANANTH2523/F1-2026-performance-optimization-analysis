@@ -2,13 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Label } from 'recharts';
 import { CarParameters, PerformanceMetrics } from '../types';
 import { analyzeCarPerformance } from '../services/geminiService';
+import { tracks } from '../data/tracks';
 
 interface SensitivityChartProps {
   currentParams: CarParameters;
+  selectedTrackId: string;
 }
 
 type AnalyzableParam = 'aeroDownforce' | 'aeroDrag' | 'suspensionStiffness' | 'batteryEnergyDeployment' | 'chassisWeightKg';
-type PlottableMetric = keyof PerformanceMetrics;
+// Fix: Exclude non-plottable 'simulatedLapTime' from the metric type.
+type PlottableMetric = Exclude<keyof PerformanceMetrics, 'simulatedLapTime'>;
 
 interface SensitivityDataPoint {
   paramValue: number;
@@ -37,7 +40,7 @@ const METRIC_CONFIG: Record<PlottableMetric, { name: string, higherIsBetter: boo
 };
 
 
-const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) => {
+const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams, selectedTrackId }) => {
   const [selectedParam, setSelectedParam] = useState<AnalyzableParam>('aeroDownforce');
   const [data, setData] = useState<SensitivityDataPoint[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,6 +51,13 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
     setError(null);
     setData(null);
 
+    const track = tracks.find(t => t.id === selectedTrackId);
+    if (!track) {
+      setError("Selected track not found for sensitivity analysis.");
+      setIsLoading(false);
+      return;
+    }
+
     const config = PARAM_CONFIG[selectedParam];
     const steps = 5;
     const range = config.max - config.min;
@@ -57,7 +67,7 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams }) =>
     try {
       const promises = paramValues.map(value => {
         const newParams = { ...currentParams, [selectedParam]: value };
-        return analyzeCarPerformance(newParams);
+        return analyzeCarPerformance(newParams, track);
       });
 
       const results = await Promise.all(promises);
