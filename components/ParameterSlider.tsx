@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { InfoIcon } from './icons/InfoIcon';
 
 interface ParameterSliderProps {
@@ -10,7 +10,9 @@ interface ParameterSliderProps {
   unit: string;
   description: string;
   onChange: (value: number) => void;
-  tooltipText?: string;
+  tooltipText?: React.ReactNode;
+  displayValue?: (value: number) => string;
+  optimalRange?: [number, number];
 }
 
 const ParameterSlider: React.FC<ParameterSliderProps> = ({
@@ -23,7 +25,24 @@ const ParameterSlider: React.FC<ParameterSliderProps> = ({
   description,
   onChange,
   tooltipText,
+  displayValue,
+  optimalRange,
 }) => {
+  const rangePercentage = useMemo(() => {
+    if (!optimalRange) return { left: '0%', width: '0%' };
+    
+    const totalRange = max - min;
+    if (totalRange <= 0) return { left: '0%', width: '0%' };
+
+    const left = ((optimalRange[0] - min) / totalRange) * 100;
+    const width = ((optimalRange[1] - optimalRange[0]) / totalRange) * 100;
+
+    return {
+      left: `${Math.max(0, Math.min(100, left))}%`,
+      width: `${Math.max(0, Math.min(100, width))}%`,
+    };
+  }, [min, max, optimalRange]);
+  
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
@@ -41,18 +60,28 @@ const ParameterSlider: React.FC<ParameterSliderProps> = ({
           )}
         </div>
         <span className="px-2 py-1 text-sm font-mono rounded bg-gray-700 text-blue-400">
-          {value} {unit}
+          {displayValue ? displayValue(value) : `${value} ${unit}`}
         </span>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg accent-blue-500"
-      />
+      <div className="relative h-2 w-full flex items-center">
+        <div className="absolute w-full h-2 bg-gray-700 rounded-lg"></div>
+        {optimalRange && (
+           <div
+            className="absolute h-2 bg-green-500/30 rounded-lg"
+            style={{ left: rangePercentage.left, width: rangePercentage.width }}
+            title={`Optimal range: ${optimalRange[0]}-${optimalRange[1]}`}
+          ></div>
+        )}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="relative w-full h-2 appearance-none cursor-pointer range-lg accent-blue-500 bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent"
+        />
+      </div>
       <p className="text-xs text-gray-400">{description}</p>
     </div>
   );

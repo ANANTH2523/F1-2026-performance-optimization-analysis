@@ -1,6 +1,7 @@
 export interface CarParameters {
   aeroDownforce: number; // 20-100 scale
   aeroDrag: number; // 20-100 scale (inversely related to downforce)
+  frontWingFlapAngle: number; // 0-20 degrees, influences downforce/drag
   suspensionStiffness: number; // 20-100 scale
   tyreCompound: number; // 1 (soft) to 5 (hard)
   enginePowerICE: number; // 500-550 kW

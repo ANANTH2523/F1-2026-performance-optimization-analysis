@@ -9,11 +9,27 @@ import Loader from './components/Loader';
 import { AnalyzeIcon } from './components/icons/AnalyzeIcon';
 import CarVisualization from './components/CarVisualization';
 import SensitivityChart from './components/SensitivityChart';
+import TyreAnalysis from './components/TyreAnalysis';
+
+const tyreCompoundTooltip = (
+  <div className="text-left">
+    <p className="mb-2">Each compound offers a different balance between peak grip and durability:</p>
+    <ul className="list-disc list-inside space-y-1 text-xs">
+      <li><strong>C5 (Softest):</strong> Maximum grip, ideal for qualifying. Very high degradation, short race stint life.</li>
+      <li><strong>C4 (Soft):</strong> High grip with slightly better durability than C5. An aggressive race compound.</li>
+      <li><strong>C3 (Medium):</strong> A balanced, versatile compound. The most common choice for race stints, offering a good blend of performance and life.</li>
+      <li><strong>C2 (Hard):</strong> Focuses on durability over one-lap pace. Used for long stints or on high-degradation tracks.</li>
+      <li><strong>C1 (Hardest):</strong> Maximum durability, lowest peak grip. A strategic option for very long one-stop races or extreme conditions.</li>
+    </ul>
+  </div>
+);
+
 
 const App: React.FC = () => {
   const [params, setParams] = useState<CarParameters>({
     aeroDownforce: 60,
     aeroDrag: 55,
+    frontWingFlapAngle: 10,
     suspensionStiffness: 70,
     tyreCompound: 2,
     enginePowerICE: 530,
@@ -31,9 +47,22 @@ const App: React.FC = () => {
   const handleParamChange = useCallback((param: keyof CarParameters, value: number) => {
     setParams((prev) => {
       const newParams = { ...prev, [param]: value };
-      if (param === 'aeroDownforce') {
-        newParams.aeroDrag = Math.max(20, Math.min(100, Math.round(110 - value * 0.9)));
+
+      if (param === 'frontWingFlapAngle') {
+        const newDownforce = 20 + (value / 20) * 80;
+        newParams.aeroDownforce = parseFloat(newDownforce.toFixed(1));
+        newParams.aeroDrag = parseFloat(Math.max(20, Math.min(100, 110 - newDownforce * 0.9)).toFixed(1));
+      } else if (param === 'aeroDownforce') {
+        const newAngle = ((value - 20) / 80) * 20;
+        newParams.frontWingFlapAngle = parseFloat(newAngle.toFixed(1));
+        newParams.aeroDrag = parseFloat(Math.max(20, Math.min(100, 110 - value * 0.9)).toFixed(1));
+      } else if (param === 'aeroDrag') {
+        const newDownforce = (110 - value) / 0.9;
+        newParams.aeroDownforce = parseFloat(Math.max(20, Math.min(100, newDownforce)).toFixed(1));
+        const newAngle = ((newParams.aeroDownforce - 20) / 80) * 20;
+        newParams.frontWingFlapAngle = parseFloat(newAngle.toFixed(1));
       }
+
       return newParams;
     });
   }, []);
@@ -68,12 +97,22 @@ const App: React.FC = () => {
                 Regulation Parameters
             </h2>
           <ParameterSlider
+            label="Front Wing Flap Angle"
+            value={params.frontWingFlapAngle}
+            min={0} max={20} step={0.5} unit="deg"
+            description="Adjusts front-end downforce. Higher angle increases front grip."
+            onChange={(v) => handleParamChange('frontWingFlapAngle', v)}
+            tooltipText="A critical setup tool for tuning aerodynamic balance. A higher angle helps reduce understeer and improves turn-in, but can make the rear unstable if not balanced."
+            optimalRange={[10, 16]}
+          />
+          <ParameterSlider
             label="Aero Downforce"
             value={params.aeroDownforce}
             min={20} max={100} step={1} unit=""
             description="Overall downforce level. Higher improves cornering but increases drag."
             onChange={(v) => handleParamChange('aeroDownforce', v)}
             tooltipText="Adjusts the active aero system's baseline for high-downforce 'Z-mode'. Affects grip in medium to high-speed corners."
+            optimalRange={[70, 95]}
           />
           <ParameterSlider
             label="Aero Drag"
@@ -82,6 +121,7 @@ const App: React.FC = () => {
             description="Overall drag level. Lower improves top speed. Linked to Downforce."
             onChange={(v) => handleParamChange('aeroDrag', v)}
             tooltipText="Represents the car's efficiency in low-drag 'X-mode'. Lower values are crucial for tracks with long straights."
+            optimalRange={[25, 45]}
           />
           <ParameterSlider
             label="Suspension Stiffness"
@@ -90,6 +130,16 @@ const App: React.FC = () => {
             description="Affects mechanical grip and stability over bumps and kerbs."
             onChange={(v) => handleParamChange('suspensionStiffness', v)}
             tooltipText="A stiffer setup provides better aerodynamic platform stability, while a softer one improves ride over bumps and mechanical grip."
+            optimalRange={[55, 80]}
+          />
+          <ParameterSlider
+            label="Tyre Compound"
+            value={params.tyreCompound}
+            min={1} max={5} step={1} unit=""
+            description="Affects the trade-off between peak grip and degradation over a stint."
+            onChange={(v) => handleParamChange('tyreCompound', v)}
+            tooltipText={tyreCompoundTooltip}
+            displayValue={(v) => ['C5-Soft', 'C4-Soft', 'C3-Med', 'C2-Hard', 'C1-Hard'][v - 1]}
           />
            <ParameterSlider
             label="Chassis Weight"
@@ -98,6 +148,25 @@ const App: React.FC = () => {
             description="Total car weight. Lower weight improves acceleration and braking."
             onChange={(v) => handleParamChange('chassisWeightKg', v)}
             tooltipText="Represents the base weight of the car. The 2026 regulations aim for lighter cars, but achieving the minimum weight is a challenge."
+            optimalRange={[720, 730]}
+          />
+          <ParameterSlider
+            label="ICE Power"
+            value={params.enginePowerICE}
+            min={500} max={550} step={1} unit="kW"
+            description="Power from the Internal Combustion Engine."
+            onChange={(v) => handleParamChange('enginePowerICE', v)}
+            tooltipText="The 2026 regulations mandate a roughly 50/50 power split. This is the output from the traditional engine component, running on 100% sustainable fuels."
+            optimalRange={[540, 550]}
+          />
+           <ParameterSlider
+            label="MGU-K Power"
+            value={params.enginePowerMGU}
+            min={300} max={350} step={1} unit="kW"
+            description="Power from the Motor Generator Unit - Kinetic."
+            onChange={(v) => handleParamChange('enginePowerMGU', v)}
+            tooltipText="The electrical power component has been significantly increased to 350kW for 2026, playing a much larger role in overall performance and strategy."
+            optimalRange={[345, 350]}
           />
            <ParameterSlider
             label="Battery Deployment"
@@ -106,6 +175,7 @@ const App: React.FC = () => {
             description="Percentage of stored energy deployed per lap."
             onChange={(v) => handleParamChange('batteryEnergyDeployment', v)}
             tooltipText="Governs the strategy for deploying the 350kW from the MGU-K. A higher percentage gives more power but may drain the battery before the lap ends."
+            optimalRange={[85, 100]}
           />
            <div className="pt-4">
              <button
@@ -130,6 +200,7 @@ const App: React.FC = () => {
                         <PerformanceChart metrics={metrics} />
                     </div>
                 </div>
+                 <TyreAnalysis metrics={metrics} />
                  <AnalysisDisplay analysis={analysis} />
                 </>
             )}

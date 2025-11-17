@@ -47,6 +47,7 @@ const buildAnalysisPrompt = (params: CarParameters): string => {
     **Car Parameters for Analysis:**
     - Aero Downforce Level (20-100): ${params.aeroDownforce} (Higher means more cornering grip but more drag)
     - Aero Drag Level (20-100): ${params.aeroDrag} (Lower means higher top speed but less downforce)
+    - Front Wing Flap Angle (degrees): ${params.frontWingFlapAngle} (Directly affects front-end grip and aero balance)
     - Suspension Stiffness (20-100): ${params.suspensionStiffness} (Affects mechanical grip and stability)
     - Tyre Compound (1-Soft to 5-Hard): ${params.tyreCompound}
     - ICE Power (kW): ${params.enginePowerICE}
@@ -81,6 +82,7 @@ const buildAeroImagePrompt = (params: CarParameters): string => {
 
     **Parameter Influence:**
     - **Aero Downforce (${params.aeroDownforce}/100):** A high value must result in much more intense blue (low pressure) under the car and wings, and more aggressively angled wing elements on the silhouette (representing 'Z-mode').
+    - **Front Wing Flap Angle (${params.frontWingFlapAngle} deg):** The silhouette of the front wing's flaps should visually reflect this angle. A higher angle means the flaps are more steeply angled relative to the main plane.
 
     The output must be a single, high-quality side-profile image.
   `;
