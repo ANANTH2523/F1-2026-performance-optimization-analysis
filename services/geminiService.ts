@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CarParameters, AnalysisResult, Track } from './types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -99,6 +97,7 @@ const buildAeroImagePrompt = (params: CarParameters): string => {
 
 
 export const analyzeCarPerformance = async (params: CarParameters, track: Track): Promise<AnalysisResult> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const model = 'gemini-2.5-pro';
     const prompt = buildAnalysisPrompt(params, track);
@@ -134,6 +133,7 @@ export const analyzeCarPerformance = async (params: CarParameters, track: Track)
 };
 
 export const generateAeroFlowImage = async (params: CarParameters): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
         const model = 'gemini-2.5-flash-image';
         const prompt = buildAeroImagePrompt(params);
