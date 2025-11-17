@@ -97,7 +97,14 @@ const App: React.FC = () => {
       setAnalysis(analysisResult.analysis);
       setFlowImageUrl(imageUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      let errorMessage = 'An unknown error occurred';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+       if (errorMessage.includes('PASTE_YOUR_GOOGLE_AI_API_KEY_HERE')) {
+        errorMessage = 'Your API key is missing. Please open services/geminiService.ts and replace the placeholder with your actual key.';
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

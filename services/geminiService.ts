@@ -97,7 +97,11 @@ const buildAeroImagePrompt = (params: CarParameters): string => {
 
 
 export const analyzeCarPerformance = async (params: CarParameters, track: Track): Promise<AnalysisResult> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // FOR LOCAL DEVELOPMENT ONLY:
+  // 1. Get your API key from Google AI Studio (https://aistudio.google.com/app/apikey).
+  // 2. Paste your key here.
+  // 3. IMPORTANT: DO NOT share this file or commit it to a public repository with your key in it.
+  const ai = new GoogleGenAI({ apiKey: "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE" });
   try {
     const model = 'gemini-2.5-pro';
     const prompt = buildAnalysisPrompt(params, track);
@@ -128,12 +132,19 @@ export const analyzeCarPerformance = async (params: CarParameters, track: Track)
   } catch (error) {
     console.error('Error analyzing car performance:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    if (errorMessage.includes('API key not valid')) {
+       throw new Error(`API key is not valid. Please check the key in services/geminiService.ts.`);
+    }
     throw new Error(`Failed to get analysis from Gemini API: ${errorMessage}`);
   }
 };
 
 export const generateAeroFlowImage = async (params: CarParameters): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // FOR LOCAL DEVELOPMENT ONLY:
+    // 1. Get your API key from Google AI Studio (https://aistudio.google.com/app/apikey).
+    // 2. Paste your key here.
+    // 3. IMPORTANT: DO NOT share this file or commit it to a public repository with your key in it.
+    const ai = new GoogleGenAI({ apiKey: "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE" });
     try {
         const model = 'gemini-2.5-flash-image';
         const prompt = buildAeroImagePrompt(params);
@@ -164,6 +175,9 @@ export const generateAeroFlowImage = async (params: CarParameters): Promise<stri
     } catch (error) {
         console.error('Error generating aero flow image:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+        if (errorMessage.includes('API key not valid')) {
+           throw new Error(`API key is not valid. Please check the key in services/geminiService.ts.`);
+        }
         throw new Error(`Failed to generate aero flow image: ${errorMessage}`);
     }
 };
