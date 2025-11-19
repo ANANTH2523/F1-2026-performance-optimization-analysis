@@ -101,10 +101,15 @@ const App: React.FC = () => {
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-       if (errorMessage.includes('PASTE_YOUR_GOOGLE_AI_API_KEY_HERE')) {
-        errorMessage = 'Your API key is missing. Please open services/geminiService.ts and replace the placeholder with your actual key.';
+      
+      // User-friendly error mapping for missing API key
+      if (errorMessage.includes('API_KEY_MISSING') || errorMessage.includes('API_KEY_PLACEHOLDER')) {
+        setError(
+            'API Key Missing: Please open "services/geminiService.ts" in your editor and replace the placeholder "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE" with your actual Google AI API Key.'
+        );
+      } else {
+        setError(errorMessage);
       }
-      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -247,7 +252,11 @@ const App: React.FC = () => {
                 <ExportIcon className="w-6 h-6" />
             </button>
            </div>
-           {error && <p className="text-red-400 text-center mt-4 text-sm">{error}</p>}
+           {error && (
+             <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-200 text-sm">
+               <strong>Error:</strong> {error}
+             </div>
+           )}
         </div>
 
         <div className="lg:col-span-2 space-y-8">
