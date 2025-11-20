@@ -1,17 +1,11 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CarParameters, AnalysisResult, Track } from './types';
+import { CarParameters, AnalysisResult, Track } from '../types';
 
-// --- FOR LOCAL DEVELOPMENT ONLY ---
-// 1. Get your free API key from Google AI Studio: https://aistudio.google.com/app/apikey
-// 2. Paste your key here, replacing the placeholder string.
-// 3. IMPORTANT: DO NOT share this file or commit it to a public repository with your key in it.
-const API_KEY = "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE";
-// ---------------------------------
+const API_KEY = import.meta.env.VITE_GOOGLE_AI_API_KEY;
 
 const getAiClient = () => {
-  // Check if the key is still the placeholder OR if it's empty
-  if (!API_KEY || API_KEY === "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE") {
-    throw new Error("API_KEY_MISSING");
+  if (!API_KEY) {
+    throw new Error("API Key Missing: Please create a .env file in the project root and add VITE_GOOGLE_AI_API_KEY=your_key_here");
   }
   return new GoogleGenAI({ apiKey: API_KEY });
 };
@@ -35,8 +29,8 @@ const responseSchema = {
         simulatedLapTime: { type: Type.STRING, description: 'Simulated lap time on the specified benchmark circuit in M:SS.mmm format.' },
       },
       required: [
-        "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip", 
-        "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency", 
+        "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip",
+        "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency",
         "lapTimePotential", "chassisResponsiveness", "highSpeedStability", "simulatedLapTime"
       ]
     },
@@ -127,11 +121,11 @@ export const generateAeroFlowImage = async (params: CarParameters): Promise<stri
 
     const base64Image = response.generatedImages[0]?.image?.imageBytes;
     if (!base64Image) throw new Error("Failed to generate image");
-    
+
     return `data:image/png;base64,${base64Image}`;
   } catch (error) {
     console.error("Image Gen Error:", error);
     // Return null to handle gracefully in UI instead of crashing analysis
-    return ''; 
+    return '';
   }
 };

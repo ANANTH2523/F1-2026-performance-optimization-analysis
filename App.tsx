@@ -83,9 +83,9 @@ const App: React.FC = () => {
 
     const track = tracks.find(t => t.id === selectedTrackId);
     if (!track) {
-        setError("Selected track not found.");
-        setIsLoading(false);
-        return;
+      setError("Selected track not found.");
+      setIsLoading(false);
+      return;
     }
 
     try {
@@ -101,15 +101,8 @@ const App: React.FC = () => {
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-      
-      // User-friendly error mapping for missing API key
-      if (errorMessage.includes('API_KEY_MISSING') || errorMessage.includes('API_KEY_PLACEHOLDER')) {
-        setError(
-            'API Key Missing: Please open "services/geminiService.ts" in your editor and replace the placeholder "PASTE_YOUR_GOOGLE_AI_API_KEY_HERE" with your actual Google AI API Key.'
-        );
-      } else {
-        setError(errorMessage);
-      }
+
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -125,9 +118,9 @@ const App: React.FC = () => {
     const metricRows = Object.entries(metrics).map(([key, value]) => ["Metric", key, typeof value === 'number' ? value.toFixed(4) : value]);
 
     const allRows = [
-        headers,
-        ...paramRows,
-        ...metricRows
+      headers,
+      ...paramRows,
+      ...metricRows
     ];
 
     const csvContent = allRows.map(row => row.join(',')).join('\n');
@@ -140,15 +133,15 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   }, [params, metrics, selectedTrackId]);
-  
+
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
       <Header />
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1 space-y-6 bg-gray-800/50 p-6 rounded-lg border border-gray-700 h-fit">
-            <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
-                Regulation Parameters
-            </h2>
+          <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
+            Regulation Parameters
+          </h2>
           <TrackSelector
             tracks={tracks}
             selectedTrackId={selectedTrackId}
@@ -199,7 +192,7 @@ const App: React.FC = () => {
             tooltipText={tyreCompoundTooltip}
             displayValue={(v) => ['C5-Soft', 'C4-Soft', 'C3-Med', 'C2-Hard', 'C1-Hard'][v - 1]}
           />
-           <ParameterSlider
+          <ParameterSlider
             label="Chassis Weight"
             value={params.chassisWeightKg}
             min={720} max={760} step={1} unit="kg"
@@ -217,7 +210,7 @@ const App: React.FC = () => {
             tooltipText="The 2026 regulations mandate a roughly 50/50 power split. This is the output from the traditional engine component, running on 100% sustainable fuels."
             optimalRange={[540, 550]}
           />
-           <ParameterSlider
+          <ParameterSlider
             label="MGU-K Power"
             value={params.enginePowerMGU}
             min={300} max={350} step={1} unit="kW"
@@ -226,7 +219,7 @@ const App: React.FC = () => {
             tooltipText="The electrical power component has been significantly increased to 350kW for 2026, playing a much larger role in overall performance and strategy."
             optimalRange={[345, 350]}
           />
-           <ParameterSlider
+          <ParameterSlider
             label="Battery Deployment"
             value={params.batteryEnergyDeployment}
             min={50} max={100} step={1} unit="%"
@@ -235,50 +228,50 @@ const App: React.FC = () => {
             tooltipText="Governs the strategy for deploying the 350kW from the MGU-K. A higher percentage gives more power but may drain the battery before the lap ends."
             optimalRange={[85, 100]}
           />
-           <div className="pt-4 flex items-center gap-4">
-             <button
-                onClick={handleAnalyze}
-                disabled={isLoading}
-                className="flex-grow w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
+          <div className="pt-4 flex items-center gap-4">
+            <button
+              onClick={handleAnalyze}
+              disabled={isLoading}
+              className="flex-grow w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
             >
-                {isLoading ? 'Analyzing...' : <> <AnalyzeIcon className="w-6 h-6" /> Analyze Performance Matrix </>}
+              {isLoading ? 'Analyzing...' : <> <AnalyzeIcon className="w-6 h-6" /> Analyze Performance Matrix </>}
             </button>
             <button
-                onClick={handleExportCsv}
-                disabled={!metrics || isLoading}
-                className="shrink-0 py-3 px-4 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
-                title="Export Data as CSV"
+              onClick={handleExportCsv}
+              disabled={!metrics || isLoading}
+              className="shrink-0 py-3 px-4 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
+              title="Export Data as CSV"
             >
-                <ExportIcon className="w-6 h-6" />
+              <ExportIcon className="w-6 h-6" />
             </button>
-           </div>
-           {error && (
-             <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-200 text-sm">
-               <strong>Error:</strong> {error}
-             </div>
-           )}
+          </div>
+          {error && (
+            <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-200 text-sm">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 space-y-8">
-            {isLoading ? <Loader /> : (
-                <>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-                    <div className="md:col-span-2">
-                        <CarVisualization flowImageUrl={flowImageUrl} />
-                    </div>
-                    <div className="md:col-span-3">
-                        <PerformanceChart metrics={metrics} />
-                    </div>
+          {isLoading ? <Loader /> : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+                <div className="md:col-span-2">
+                  <CarVisualization flowImageUrl={flowImageUrl} />
                 </div>
-                 <KeyMetricsDisplay metrics={metrics} trackName={selectedTrack.name} />
-                 <TyreAnalysis metrics={metrics} />
-                 <AnalysisDisplay analysis={analysis} />
-                </>
-            )}
+                <div className="md:col-span-3">
+                  <PerformanceChart metrics={metrics} />
+                </div>
+              </div>
+              <KeyMetricsDisplay metrics={metrics} trackName={selectedTrack.name} />
+              <TyreAnalysis metrics={metrics} />
+              <AnalysisDisplay analysis={analysis} />
+            </>
+          )}
         </div>
       </main>
       <footer className="container mx-auto p-4 md:p-8 mt-8">
-           <SensitivityChart currentParams={params} selectedTrackId={selectedTrackId} />
+        <SensitivityChart currentParams={params} selectedTrackId={selectedTrackId} />
       </footer>
     </div>
   );
