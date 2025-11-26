@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import ParameterSlider from './components/ParameterSlider';
@@ -8,6 +9,8 @@ import { analyzeCarPerformance, generateAeroFlowImage } from './services/geminiS
 import Loader from './components/Loader';
 import { AnalyzeIcon } from './components/icons/AnalyzeIcon';
 import { ExportIcon } from './components/icons/ExportIcon';
+import { SparklesIcon } from './components/icons/SparklesIcon';
+import { CompareIcon } from './components/icons/CompareIcon';
 import CarVisualization from './components/CarVisualization';
 import SensitivityChart from './components/SensitivityChart';
 import TyreAnalysis from './components/TyreAnalysis';
@@ -28,6 +31,53 @@ const tyreCompoundTooltip = (
   </div>
 );
 
+// Configuration for optimal ranges based on Track Downforce Level
+const TRACK_SETUP_CONFIG: Record<string, Partial<Record<keyof CarParameters, [number, number]>>> = {
+  max: { // Monaco
+    aeroDownforce: [90, 100],
+    aeroDrag: [45, 60],
+    frontWingFlapAngle: [16, 20],
+    suspensionStiffness: [30, 50],
+    tyreCompound: [4, 5],
+  },
+  high: { // Barcelona, Silverstone
+    aeroDownforce: [70, 90],
+    aeroDrag: [30, 45],
+    frontWingFlapAngle: [12, 16],
+    suspensionStiffness: [60, 80],
+    tyreCompound: [2, 4],
+  },
+  medium: { // Spa
+    aeroDownforce: [50, 70],
+    aeroDrag: [25, 40],
+    frontWingFlapAngle: [8, 12],
+    suspensionStiffness: [65, 85],
+    tyreCompound: [2, 3],
+  },
+  low: { // Monza
+    aeroDownforce: [25, 45],
+    aeroDrag: [20, 30],
+    frontWingFlapAngle: [2, 8],
+    suspensionStiffness: [70, 90],
+    tyreCompound: [2, 3],
+  }
+};
+
+const BASE_OPTIMAL: Partial<Record<keyof CarParameters, [number, number]>> = {
+    enginePowerICE: [540, 550],
+    enginePowerMGU: [345, 350],
+    batteryEnergyDeployment: [90, 100],
+    chassisWeightKg: [720, 725],
+};
+
+const SectionHeader: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <div className="mb-6 bg-gray-900/40 border border-gray-700/50 rounded-lg p-4">
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-700 pb-2 mb-3">{title}</h3>
+        <div className="space-y-4">
+            {children}
+        </div>
+    </div>
+);
 
 const App: React.FC = () => {
   const [params, setParams] = useState<CarParameters>({
@@ -44,12 +94,19 @@ const App: React.FC = () => {
 
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0].id);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  const [baselineMetrics, setBaselineMetrics] = useState<PerformanceMetrics | null>(null);
   const [analysis, setAnalysis] = useState<string>('');
   const [flowImageUrl, setFlowImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId)!, [selectedTrackId]);
+
+  // Determine optimal ranges based on current track
+  const currentOptimalRanges = useMemo(() => {
+    const trackConfig = TRACK_SETUP_CONFIG[selectedTrack.downforceLevel] || TRACK_SETUP_CONFIG['high'];
+    return { ...BASE_OPTIMAL, ...trackConfig } as Record<keyof CarParameters, [number, number]>;
+  }, [selectedTrack]);
 
   const handleParamChange = useCallback((param: keyof CarParameters, value: number) => {
     setParams((prev) => {
@@ -74,24 +131,65 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const handleAutoOptimize = useCallback(() => {
+    const newParams = { ...params };
+    
+    Object.keys(currentOptimalRanges).forEach((key) => {
+        const paramKey = key as keyof CarParameters;
+        const [min, max] = currentOptimalRanges[paramKey];
+        let mid = (min + max) / 2;
+        
+        // Rounding logic based on parameter type for cleaner UI values
+        if (paramKey === 'tyreCompound') {
+            mid = Math.round(mid);
+        } else if (paramKey === 'frontWingFlapAngle') {
+            mid = Math.round(mid * 2) / 2; // Nearest 0.5
+        } else {
+            mid = Math.round(mid); // Nearest Integer
+        }
+
+        newParams[paramKey] = mid;
+    });
+
+    // Run the linked parameter logic one last time to ensure consistency (e.g. sync drag/downforce)
+    const newDownforce = newParams.aeroDownforce;
+    const calculatedAngle = ((newDownforce - 20) / 80) * 20;
+    const calculatedDrag = Math.max(20, Math.min(100, 110 - newDownforce * 0.9));
+    
+    newParams.frontWingFlapAngle = parseFloat(calculatedAngle.toFixed(1));
+    newParams.aeroDrag = parseFloat(calculatedDrag.toFixed(1));
+
+    setParams(newParams);
+  }, [currentOptimalRanges, params]);
+
+  const handleSetBaseline = useCallback(() => {
+    if (metrics) {
+      if (baselineMetrics) {
+        setBaselineMetrics(null); // Clear if already set
+      } else {
+        setBaselineMetrics(metrics); // Set current as baseline
+      }
+    }
+  }, [metrics, baselineMetrics]);
+
   const handleAnalyze = async () => {
     setIsLoading(true);
     setError(null);
     setMetrics(null);
     setAnalysis('');
     setFlowImageUrl(null);
-
+    
     const track = tracks.find(t => t.id === selectedTrackId);
     if (!track) {
-      setError("Selected track not found.");
-      setIsLoading(false);
-      return;
+        setError("Selected track not found.");
+        setIsLoading(false);
+        return;
     }
 
     try {
       const [analysisResult, imageUrl] = await Promise.all([
         analyzeCarPerformance(params, track),
-        generateAeroFlowImage(params)
+        generateAeroFlowImage(params, track)
       ]);
       setMetrics(analysisResult.metrics);
       setAnalysis(analysisResult.analysis);
@@ -101,8 +199,14 @@ const App: React.FC = () => {
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-
-      setError(errorMessage);
+      
+      if (errorMessage.includes('API_KEY_MISSING')) {
+        setError(
+            'API Key Missing: Please create a .env file in the root directory with "API_KEY=your_actual_api_key".'
+        );
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -118,9 +222,9 @@ const App: React.FC = () => {
     const metricRows = Object.entries(metrics).map(([key, value]) => ["Metric", key, typeof value === 'number' ? value.toFixed(4) : value]);
 
     const allRows = [
-      headers,
-      ...paramRows,
-      ...metricRows
+        headers,
+        ...paramRows,
+        ...metricRows
     ];
 
     const csvContent = allRows.map(row => row.join(',')).join('\n');
@@ -133,145 +237,204 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   }, [params, metrics, selectedTrackId]);
-
+  
   return (
-    <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
+    <div className="min-h-screen font-sans flex flex-col">
       <Header />
-      <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-6 bg-gray-800/50 p-6 rounded-lg border border-gray-700 h-fit">
-          <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
-            Regulation Parameters
-          </h2>
-          <TrackSelector
-            tracks={tracks}
-            selectedTrackId={selectedTrackId}
-            onSelectTrack={setSelectedTrackId}
-          />
-          <ParameterSlider
-            label="Front Wing Flap Angle"
-            value={params.frontWingFlapAngle}
-            min={0} max={20} step={0.5} unit="deg"
-            description="Adjusts front-end downforce. Higher angle increases front grip."
-            onChange={(v) => handleParamChange('frontWingFlapAngle', v)}
-            tooltipText="A critical setup tool for tuning aerodynamic balance. A higher angle helps reduce understeer and improves turn-in, but can make the rear unstable if not balanced."
-            optimalRange={[10, 16]}
-          />
-          <ParameterSlider
-            label="Aero Downforce"
-            value={params.aeroDownforce}
-            min={20} max={100} step={1} unit=""
-            description="Overall downforce level. Higher improves cornering but increases drag."
-            onChange={(v) => handleParamChange('aeroDownforce', v)}
-            tooltipText="Adjusts the active aero system's baseline for high-downforce 'Z-mode'. Affects grip in medium to high-speed corners."
-            optimalRange={[70, 95]}
-          />
-          <ParameterSlider
-            label="Aero Drag"
-            value={params.aeroDrag}
-            min={20} max={100} step={1} unit=""
-            description="Overall drag level. Lower improves top speed. Linked to Downforce."
-            onChange={(v) => handleParamChange('aeroDrag', v)}
-            tooltipText="Represents the car's efficiency in low-drag 'X-mode'. Lower values are crucial for tracks with long straights."
-            optimalRange={[25, 45]}
-          />
-          <ParameterSlider
-            label="Suspension Stiffness"
-            value={params.suspensionStiffness}
-            min={20} max={100} step={1} unit=""
-            description="Affects mechanical grip and stability over bumps and kerbs."
-            onChange={(v) => handleParamChange('suspensionStiffness', v)}
-            tooltipText="A stiffer setup provides better aerodynamic platform stability, while a softer one improves ride over bumps and mechanical grip."
-            optimalRange={[55, 80]}
-          />
-          <ParameterSlider
-            label="Tyre Compound"
-            value={params.tyreCompound}
-            min={1} max={5} step={1} unit=""
-            description="Affects the trade-off between peak grip and degradation over a stint."
-            onChange={(v) => handleParamChange('tyreCompound', v)}
-            tooltipText={tyreCompoundTooltip}
-            displayValue={(v) => ['C5-Soft', 'C4-Soft', 'C3-Med', 'C2-Hard', 'C1-Hard'][v - 1]}
-          />
-          <ParameterSlider
-            label="Chassis Weight"
-            value={params.chassisWeightKg}
-            min={720} max={760} step={1} unit="kg"
-            description="Total car weight. Lower weight improves acceleration and braking."
-            onChange={(v) => handleParamChange('chassisWeightKg', v)}
-            tooltipText="Represents the base weight of the car. The 2026 regulations aim for lighter cars, but achieving the minimum weight is a challenge."
-            optimalRange={[720, 730]}
-          />
-          <ParameterSlider
-            label="ICE Power"
-            value={params.enginePowerICE}
-            min={500} max={550} step={1} unit="kW"
-            description="Power from the Internal Combustion Engine."
-            onChange={(v) => handleParamChange('enginePowerICE', v)}
-            tooltipText="The 2026 regulations mandate a roughly 50/50 power split. This is the output from the traditional engine component, running on 100% sustainable fuels."
-            optimalRange={[540, 550]}
-          />
-          <ParameterSlider
-            label="MGU-K Power"
-            value={params.enginePowerMGU}
-            min={300} max={350} step={1} unit="kW"
-            description="Power from the Motor Generator Unit - Kinetic."
-            onChange={(v) => handleParamChange('enginePowerMGU', v)}
-            tooltipText="The electrical power component has been significantly increased to 350kW for 2026, playing a much larger role in overall performance and strategy."
-            optimalRange={[345, 350]}
-          />
-          <ParameterSlider
-            label="Battery Deployment"
-            value={params.batteryEnergyDeployment}
-            min={50} max={100} step={1} unit="%"
-            description="Percentage of stored energy deployed per lap."
-            onChange={(v) => handleParamChange('batteryEnergyDeployment', v)}
-            tooltipText="Governs the strategy for deploying the 350kW from the MGU-K. A higher percentage gives more power but may drain the battery before the lap ends."
-            optimalRange={[85, 100]}
-          />
-          <div className="pt-4 flex items-center gap-4">
-            <button
-              onClick={handleAnalyze}
-              disabled={isLoading}
-              className="flex-grow w-full flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors text-lg"
-            >
-              {isLoading ? 'Analyzing...' : <> <AnalyzeIcon className="w-6 h-6" /> Analyze Performance Matrix </>}
-            </button>
-            <button
-              onClick={handleExportCsv}
-              disabled={!metrics || isLoading}
-              className="shrink-0 py-3 px-4 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
-              title="Export Data as CSV"
-            >
-              <ExportIcon className="w-6 h-6" />
-            </button>
-          </div>
-          {error && (
-            <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-200 text-sm">
-              <strong>Error:</strong> {error}
+      
+      {/* Main Grid: Increased gap from 6 to 8 for better spacing */}
+      <main className="flex-grow container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* Left Column: Controls (Span 4) */}
+        <div className="lg:col-span-4 space-y-4 flex flex-col h-full">
+            <div className="bg-gray-800/60 backdrop-blur-md p-5 rounded-lg border border-gray-700/50 shadow-xl flex-shrink-0">
+                <TrackSelector
+                    tracks={tracks}
+                    selectedTrackId={selectedTrackId}
+                    onSelectTrack={setSelectedTrackId}
+                />
+                
+                <button
+                    onClick={handleAutoOptimize}
+                    className="w-full group relative flex items-center justify-center gap-2 py-3 px-4 bg-teal-900/30 hover:bg-teal-800/40 text-teal-300 text-xs font-bold uppercase tracking-wider rounded border border-teal-700/50 transition-all overflow-hidden"
+                >
+                    <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-teal-500/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+                    <SparklesIcon className="w-4 h-4" />
+                    Auto-Config: {selectedTrack.name.split(' ')[0]} Setup
+                </button>
             </div>
-          )}
+
+            {/* Scrollable controls area to ensure it doesn't push page too long */}
+            <div className="bg-gray-800/60 backdrop-blur-md p-5 rounded-lg border border-gray-700/50 shadow-xl overflow-y-auto max-h-[600px] custom-scrollbar flex-grow">
+                <SectionHeader title="Aerodynamics">
+                    <ParameterSlider
+                        label="Front Wing Angle"
+                        value={params.frontWingFlapAngle}
+                        min={0} max={20} step={0.5} unit="°"
+                        description="Front-end bite vs Balance"
+                        onChange={(v) => handleParamChange('frontWingFlapAngle', v)}
+                        tooltipText="Critical for aero balance. Higher angles increase front grip but move center of pressure forward."
+                        optimalRange={currentOptimalRanges.frontWingFlapAngle}
+                    />
+                    <ParameterSlider
+                        label="Downforce Index"
+                        value={params.aeroDownforce}
+                        min={20} max={100} step={1} unit=""
+                        description="Overall grip level"
+                        onChange={(v) => handleParamChange('aeroDownforce', v)}
+                        tooltipText="Total vertical load generated. Higher values improve cornering speeds but typically increase drag."
+                        optimalRange={currentOptimalRanges.aeroDownforce}
+                    />
+                    <ParameterSlider
+                        label="Drag Coefficient"
+                        value={params.aeroDrag}
+                        min={20} max={100} step={1} unit=""
+                        description="Air resistance"
+                        onChange={(v) => handleParamChange('aeroDrag', v)}
+                        tooltipText="Resistance to forward motion. Lower is better for straight line speed and efficiency."
+                        optimalRange={currentOptimalRanges.aeroDrag}
+                    />
+                </SectionHeader>
+
+                <SectionHeader title="Chassis & Dynamics">
+                     <ParameterSlider
+                        label="Suspension Stiffness"
+                        value={params.suspensionStiffness}
+                        min={20} max={100} step={1} unit=""
+                        description="Ride & Platform control"
+                        onChange={(v) => handleParamChange('suspensionStiffness', v)}
+                        tooltipText="Stiffer suspension stabilizes aero platform but reduces mechanical grip over bumps."
+                        optimalRange={currentOptimalRanges.suspensionStiffness}
+                    />
+                    <ParameterSlider
+                        label="Tyre Compound"
+                        value={params.tyreCompound}
+                        min={1} max={5} step={1} unit=""
+                        description="Grip vs Durability"
+                        onChange={(v) => handleParamChange('tyreCompound', v)}
+                        tooltipText={tyreCompoundTooltip}
+                        displayValue={(v) => ['C1-Hard', 'C2-Hard', 'C3-Med', 'C4-Soft', 'C5-Soft'][v - 1]}
+                        optimalRange={currentOptimalRanges.tyreCompound}
+                    />
+                    <ParameterSlider
+                        label="Chassis Weight"
+                        value={params.chassisWeightKg}
+                        min={720} max={760} step={1} unit="kg"
+                        description="Total mass"
+                        onChange={(v) => handleParamChange('chassisWeightKg', v)}
+                        tooltipText="Lower weight always improves acceleration, braking, and cornering."
+                        optimalRange={currentOptimalRanges.chassisWeightKg}
+                    />
+                </SectionHeader>
+
+                <SectionHeader title="Power Unit (PU)">
+                    <ParameterSlider
+                        label="ICE Output"
+                        value={params.enginePowerICE}
+                        min={500} max={550} step={1} unit="kW"
+                        description="Combustion Engine"
+                        onChange={(v) => handleParamChange('enginePowerICE', v)}
+                        tooltipText="Power from the V6 Turbo Internal Combustion Engine."
+                        optimalRange={currentOptimalRanges.enginePowerICE}
+                    />
+                    <ParameterSlider
+                        label="MGU-K Output"
+                        value={params.enginePowerMGU}
+                        min={300} max={350} step={1} unit="kW"
+                        description="Electric Motor"
+                        onChange={(v) => handleParamChange('enginePowerMGU', v)}
+                        tooltipText="Power from the kinetic energy recovery system. 350kW limit."
+                        optimalRange={currentOptimalRanges.enginePowerMGU}
+                    />
+                    <ParameterSlider
+                        label="Deployment Mode"
+                        value={params.batteryEnergyDeployment}
+                        min={50} max={100} step={1} unit="%"
+                        description="Energy usage strategy"
+                        onChange={(v) => handleParamChange('batteryEnergyDeployment', v)}
+                        tooltipText="Aggressiveness of electrical energy deployment over a lap."
+                        optimalRange={currentOptimalRanges.batteryEnergyDeployment}
+                    />
+                </SectionHeader>
+            </div>
+            
+             {/* Action Bar */}
+             <div className="flex gap-2 p-2 bg-gray-900/80 rounded-lg border border-gray-700/50 backdrop-blur flex-shrink-0">
+               <button
+                  onClick={handleAnalyze}
+                  disabled={isLoading}
+                  className="flex-grow flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-br from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 disabled:from-gray-700 disabled:to-gray-800 disabled:text-gray-500 text-white font-bold rounded shadow-lg shadow-blue-900/40 transition-all active:scale-[0.98]"
+              >
+                  {isLoading ? 'Simulating...' : <> <AnalyzeIcon className="w-5 h-5" /> RUN SIMULATION </>}
+              </button>
+              
+              <button
+                  onClick={handleSetBaseline}
+                  disabled={!metrics || isLoading}
+                  className={`flex-shrink-0 p-3 rounded border transition-colors ${
+                    baselineMetrics 
+                      ? 'bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50' 
+                      : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700 hover:text-white'
+                  }`}
+                  title={baselineMetrics ? "Clear Baseline" : "Compare"}
+              >
+                  <CompareIcon className="w-5 h-5" />
+              </button>
+
+              <button
+                  onClick={handleExportCsv}
+                  disabled={!metrics || isLoading}
+                  className="flex-shrink-0 p-3 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded border border-gray-600 transition-colors"
+                  title="Export Data"
+              >
+                  <ExportIcon className="w-5 h-5" />
+              </button>
+             </div>
+             
+             {error && (
+                <div className="p-3 bg-red-900/20 border-l-2 border-red-500 text-red-300 text-xs mt-2 rounded-r">
+                   <strong className="block uppercase text-[10px] tracking-wider mb-1">System Error</strong>
+                   {error}
+                </div>
+             )}
         </div>
 
-        <div className="lg:col-span-2 space-y-8">
-          {isLoading ? <Loader /> : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-                <div className="md:col-span-2">
-                  <CarVisualization flowImageUrl={flowImageUrl} />
+        {/* Center & Right: Results (Span 8) */}
+        <div className="lg:col-span-8 space-y-6 flex flex-col h-full min-w-0">
+            {isLoading ? <Loader /> : (
+                <>
+                {/* Top Row: Visuals & Chart */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[400px]">
+                    <div className="h-full">
+                         <CarVisualization flowImageUrl={flowImageUrl} params={params} isLoading={isLoading} />
+                    </div>
+                    <div className="h-full">
+                        <PerformanceChart metrics={metrics} baselineMetrics={baselineMetrics} />
+                    </div>
                 </div>
-                <div className="md:col-span-3">
-                  <PerformanceChart metrics={metrics} />
-                </div>
-              </div>
-              <KeyMetricsDisplay metrics={metrics} trackName={selectedTrack.name} />
-              <TyreAnalysis metrics={metrics} />
-              <AnalysisDisplay analysis={analysis} />
-            </>
-          )}
+                 
+                 {/* Middle Row: Metrics - Switch to stacking on LG to prevent cramping */}
+                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                     <div className="xl:col-span-2 min-w-0">
+                        <KeyMetricsDisplay metrics={metrics} baselineMetrics={baselineMetrics} trackName={selectedTrack.name} />
+                     </div>
+                     <div className="xl:col-span-1 min-w-0">
+                        <TyreAnalysis metrics={metrics} />
+                     </div>
+                 </div>
+
+                 {/* Bottom Row: Text Analysis */}
+                 <div className="flex-grow min-h-[300px]">
+                    <AnalysisDisplay analysis={analysis} />
+                 </div>
+                </>
+            )}
         </div>
       </main>
-      <footer className="container mx-auto p-4 md:p-8 mt-8">
-        <SensitivityChart currentParams={params} selectedTrackId={selectedTrackId} />
+      
+      {/* Footer / Sensitivity */}
+      <footer className="container mx-auto p-4 md:p-8 mt-4 border-t border-gray-800">
+           <SensitivityChart currentParams={params} selectedTrackId={selectedTrackId} />
       </footer>
     </div>
   );

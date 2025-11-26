@@ -1,67 +1,143 @@
+
 import React from 'react';
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { PerformanceMetrics } from '../types';
 
 interface PerformanceChartProps {
   metrics: PerformanceMetrics | null;
+  baselineMetrics: PerformanceMetrics | null;
 }
 
-const PerformanceChart: React.FC<PerformanceChartProps> = ({ metrics }) => {
-  // Normalize data for the chart. Radar charts work best with values on a similar scale (e.g., 0-100).
-  // We also invert values where lower is better (lap time, tyre wear).
-  const processDataForChart = (m: PerformanceMetrics) => {
-    const data = [
-      { subject: 'Top Speed', value: ((m.topSpeedKmh - 320) / (370 - 320)) * 100, fullMark: 100, unit: 'km/h', original: m.topSpeedKmh },
-      { subject: 'Braking', value: m.brakingEfficiency, fullMark: 100, unit: '/100', original: m.brakingEfficiency },
-      { subject: 'Cornering', value: ((m.maxCorneringG - 4.5) / (6.0 - 4.5)) * 100, fullMark: 100, unit: 'G', original: m.maxCorneringG },
-      { subject: 'Low-Speed Grip', value: m.lowSpeedGrip, fullMark: 100, unit: '/100', original: m.lowSpeedGrip },
-      { subject: 'Traction', value: m.tractionScore, fullMark: 100, unit: '/100', original: m.tractionScore },
-      { subject: 'Tyre Life', value: 100 - (m.tyreWearIndex - 1), fullMark: 100, unit: '/100', original: m.tyreWearIndex }, // Inverted
-      { subject: 'Energy Recov.', value: m.energyRecoveryEfficiency, fullMark: 100, unit: '/100', original: m.energyRecoveryEfficiency },
-      { subject: 'Lap Potential', value: 100 - (m.lapTimePotential - 1), fullMark: 100, unit: '/100', original: m.lapTimePotential }, // Inverted
-      { subject: 'Agility', value: m.chassisResponsiveness, fullMark: 100, unit: '/100', original: m.chassisResponsiveness },
-      { subject: 'Stability', value: m.highSpeedStability, fullMark: 100, unit: '/100', original: m.highSpeedStability },
-    ];
-    // Cap values at 100 to prevent chart distortion
-    return data.map(d => ({ ...d, value: Math.min(100, Math.max(0, d.value)) }));
+const PerformanceChart: React.FC<PerformanceChartProps> = React.memo(({ metrics, baselineMetrics }) => {
+  
+  const normalizeMetrics = (m: PerformanceMetrics) => {
+    return {
+        topSpeedKmh: ((m.topSpeedKmh - 320) / (370 - 320)) * 100,
+        brakingEfficiency: m.brakingEfficiency,
+        maxCorneringG: ((m.maxCorneringG - 4.5) / (6.0 - 4.5)) * 100,
+        lowSpeedGrip: m.lowSpeedGrip,
+        tractionScore: m.tractionScore,
+        tyreWearIndex: 100 - (m.tyreWearIndex - 1), 
+        energyRecoveryEfficiency: m.energyRecoveryEfficiency,
+        lapTimePotential: 100 - (m.lapTimePotential - 1), 
+        chassisResponsiveness: m.chassisResponsiveness,
+        highSpeedStability: m.highSpeedStability,
+    };
   };
 
-  const chartData = metrics ? processDataForChart(metrics) : [];
+  const processDataForChart = () => {
+    if (!metrics) return [];
+
+    const current = normalizeMetrics(metrics);
+    const baseline = baselineMetrics ? normalizeMetrics(baselineMetrics) : null;
+
+    const subjects = [
+      { id: 'topSpeedKmh', name: 'Top Speed', unit: 'km/h', original: metrics.topSpeedKmh, baselineOriginal: baselineMetrics?.topSpeedKmh },
+      { id: 'brakingEfficiency', name: 'Braking', unit: '/100', original: metrics.brakingEfficiency, baselineOriginal: baselineMetrics?.brakingEfficiency },
+      { id: 'maxCorneringG', name: 'Cornering G', unit: 'G', original: metrics.maxCorneringG, baselineOriginal: baselineMetrics?.maxCorneringG },
+      { id: 'lowSpeedGrip', name: 'Mech. Grip', unit: '/100', original: metrics.lowSpeedGrip, baselineOriginal: baselineMetrics?.lowSpeedGrip },
+      { id: 'tractionScore', name: 'Traction', unit: '/100', original: metrics.tractionScore, baselineOriginal: baselineMetrics?.tractionScore },
+      { id: 'tyreWearIndex', name: 'Tyre Life', unit: '/100', original: metrics.tyreWearIndex, baselineOriginal: baselineMetrics?.tyreWearIndex },
+      { id: 'energyRecoveryEfficiency', name: 'ERS Eff.', unit: '/100', original: metrics.energyRecoveryEfficiency, baselineOriginal: baselineMetrics?.energyRecoveryEfficiency },
+      { id: 'lapTimePotential', name: 'Pace', unit: '/100', original: metrics.lapTimePotential, baselineOriginal: baselineMetrics?.lapTimePotential },
+      { id: 'chassisResponsiveness', name: 'Agility', unit: '/100', original: metrics.chassisResponsiveness, baselineOriginal: baselineMetrics?.chassisResponsiveness },
+      { id: 'highSpeedStability', name: 'Stability', unit: '/100', original: metrics.highSpeedStability, baselineOriginal: baselineMetrics?.highSpeedStability },
+    ];
+
+    return subjects.map(s => ({
+      subject: s.name,
+      value: Math.min(100, Math.max(0, current[s.id as keyof typeof current])),
+      baseline: baseline ? Math.min(100, Math.max(0, baseline[s.id as keyof typeof baseline])) : undefined,
+      fullMark: 100,
+      unit: s.unit,
+      original: s.original,
+      baselineOriginal: s.baselineOriginal
+    }));
+  };
+
+  const chartData = processDataForChart();
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-gray-900/95 border border-gray-600 p-3 rounded shadow-xl z-50 backdrop-blur-sm">
+          <p className="font-bold text-gray-200 mb-2 uppercase tracking-wide text-xs">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center gap-3 mb-1 justify-between">
+              <div className="flex items-center gap-2">
+                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.stroke || entry.fill }}></div>
+                 <span className="text-gray-400 text-xs">{entry.name}</span>
+              </div>
+              <span className="text-white font-mono text-xs font-bold">
+                 {entry.name === 'Current' 
+                    ? entry.payload.original.toFixed(2) 
+                    : entry.payload.baselineOriginal?.toFixed(2)} 
+                 {' '}<span className="text-gray-500 font-normal">{entry.payload.unit}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 h-96">
-      <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
-        Performance Profile
+    <div className="bg-gray-800/60 backdrop-blur-md p-4 rounded-lg border border-gray-700/50 h-[400px] w-full relative shadow-lg flex flex-col">
+      <h2 className="text-sm font-bold text-gray-300 mb-2 uppercase tracking-widest flex justify-between items-center flex-shrink-0">
+        <span>Performance Radar</span>
+        {baselineMetrics && <span className="text-[10px] bg-amber-900/30 text-amber-400 px-2 py-0.5 rounded border border-amber-900/50">VS BASELINE</span>}
       </h2>
       {metrics ? (
-        <ResponsiveContainer width="100%" height="100%">
-          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
-            <PolarGrid stroke="#4b5563" />
-            <PolarAngleAxis dataKey="subject" tick={{ fill: '#d1d5db', fontSize: 12 }} />
-            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-            <Radar name="Performance" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'rgba(31, 41, 55, 0.8)',
-                borderColor: '#4b5563',
-                borderRadius: '0.5rem',
-              }}
-              labelStyle={{ color: '#ffffff' }}
-              formatter={(value, name, props) => [`${props.payload.original.toFixed(2)} ${props.payload.unit}`, "Value"]}
-            />
-          </RadarChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full text-gray-500">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-          </svg>
-          <p className="text-lg">Performance chart will appear here.</p>
+        <div className="flex-grow min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+            <RadarChart cx="50%" cy="50%" outerRadius="70%" data={chartData}>
+                <PolarGrid stroke="#374151" strokeDasharray="3 3" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                
+                {baselineMetrics && (
+                <Radar
+                    name="Baseline"
+                    dataKey="baseline"
+                    stroke="#d97706" /* amber-600 */
+                    strokeDasharray="4 4"
+                    fill="#d97706"
+                    fillOpacity={0.1}
+                    strokeWidth={1.5}
+                />
+                )}
+
+                <Radar
+                name="Current"
+                dataKey="value"
+                stroke="#22d3ee" /* cyan-400 */
+                fill="#0ea5e9" /* sky-500 */
+                fillOpacity={0.3}
+                strokeWidth={2}
+                />
+
+                <Tooltip content={<CustomTooltip />} />
+                <Legend 
+                    verticalAlign="bottom" 
+                    height={20} 
+                    iconType="rect"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }}
+                />
+            </RadarChart>
+            </ResponsiveContainer>
         </div>
+      ) : (
+         <div className="flex flex-col items-center justify-center h-full text-gray-600">
+             <div className="w-16 h-16 rounded-full border-2 border-dashed border-gray-700 flex items-center justify-center mb-2">
+                 <div className="w-2 h-2 bg-gray-700 rounded-full"></div>
+             </div>
+             <span className="text-xs uppercase tracking-widest">No Telemetry Data</span>
+         </div>
       )}
     </div>
   );
-};
+});
 
 export default PerformanceChart;

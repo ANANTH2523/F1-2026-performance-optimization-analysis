@@ -1,13 +1,12 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CarParameters, AnalysisResult, Track } from '../types';
-
-const API_KEY = import.meta.env.VITE_GOOGLE_AI_API_KEY;
+import { CarParameters, AnalysisResult, Track, SensitivityDataPoint } from './types';
 
 const getAiClient = () => {
-  if (!API_KEY) {
-    throw new Error("API Key Missing: Please create a .env file in the project root and add VITE_GOOGLE_AI_API_KEY=your_key_here");
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API_KEY_MISSING");
   }
-  return new GoogleGenAI({ apiKey: API_KEY });
+  return new GoogleGenAI({ apiKey });
 };
 
 const responseSchema = {
@@ -29,8 +28,8 @@ const responseSchema = {
         simulatedLapTime: { type: Type.STRING, description: 'Simulated lap time on the specified benchmark circuit in M:SS.mmm format.' },
       },
       required: [
-        "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip",
-        "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency",
+        "topSpeedKmh", "brakingEfficiency", "maxCorneringG", "lowSpeedGrip", 
+        "tractionScore", "tyreWearIndex", "energyRecoveryEfficiency", 
         "lapTimePotential", "chassisResponsiveness", "highSpeedStability", "simulatedLapTime"
       ]
     },
@@ -40,6 +39,31 @@ const responseSchema = {
     }
   },
   required: ['metrics', 'analysis']
+};
+
+const sensitivitySchema = {
+  type: Type.OBJECT,
+  properties: {
+    results: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          paramValue: { type: Type.NUMBER },
+          metrics: {
+            type: Type.OBJECT,
+            properties: {
+               topSpeedKmh: { type: Type.NUMBER },
+               maxCorneringG: { type: Type.NUMBER },
+               lapTimePotential: { type: Type.NUMBER },
+               tyreWearIndex: { type: Type.NUMBER },
+               simulatedLapTime: { type: Type.STRING }
+            }
+          }
+        }
+      }
+    }
+  }
 };
 
 const buildAnalysisPrompt = (params: CarParameters, track: Track): string => {
@@ -91,41 +115,113 @@ export const analyzeCarPerformance = async (params: CarParameters, track: Track)
   }
 };
 
-export const generateAeroFlowImage = async (params: CarParameters): Promise<string> => {
+export const performSensitivityAnalysis = async (
+  baseParams: CarParameters,
+  track: Track,
+  variable: keyof CarParameters,
+  min: number,
+  max: number,
+  steps: number
+): Promise<SensitivityDataPoint[]> => {
   try {
     const ai = getAiClient();
+    
+    // Create a range of values to guide the AI
+    const stepSize = (max - min) / (steps - 1);
+    const rangeValues = Array.from({ length: steps }, (_, i) => Math.round(min + i * stepSize));
+
     const prompt = `
-      A high-tech, photorealistic CFD (Computational Fluid Dynamics) visualization of a 2026 Formula 1 car from a top-down view.
+      Perform a precise parameter sensitivity analysis for a 2026 F1 car simulation.
       
-      Visual Style:
-      - Scientific visualization style with a dark background.
-      - The car body should be outlined in white or metallic grey.
-      - Show distinct aerodynamic streamlines flowing over the car.
+      Context:
+      - Circuit: ${track.name} (${track.type})
+      - Variable Parameter: "${String(variable)}"
+      - Sweep Range: ${min} to ${max} (Steps: ${steps})
       
-      Parameter Visualization:
-      - Front Wing Angle is ${params.frontWingFlapAngle} degrees (visualize air disruption at the front).
-      - Downforce level is ${params.aeroDownforce}/100 (show ${params.aeroDownforce > 60 ? 'intense red/orange pressure zones' : 'blue/green lower pressure zones'} on the wings and floor).
-      - Drag level is ${params.aeroDrag}/100 (visualize the turbulent wake behind the car; ${params.aeroDrag > 60 ? 'large, chaotic wake' : 'narrow, clean wake'}).
+      Base Configuration (Held Constant):
+      ${JSON.stringify({ ...baseParams, [variable]: "VARIABLE" }, null, 2)}
+
+      Task:
+      Simulate the car performance at these specific values for "${String(variable)}": [${rangeValues.join(', ')}].
+      Return the resulting performance metrics for each step.
+
+      PHYSICS RULES TO ENFORCE:
+      1. Consistency: The metrics must show a smooth, logical trend (e.g., linear or curve). Do not output random noise.
+      2. Aero Downforce: Increasing this MUST significantly INCREASE 'maxCorneringG' and DECREASE 'topSpeedKmh' (due to drag). Lap time should generally improve unless drag penalty is too high.
+      3. Aero Drag: Increasing this MUST DECREASE 'topSpeedKmh'.
+      4. Engine Power: Increasing this MUST INCREASE 'topSpeedKmh' and IMPROVE 'lapTimePotential'.
+      5. Weight: Increasing this MUST WORSEN 'maxCorneringG', 'brakingEfficiency' (internal calc), and 'lapTimePotential'.
       
-      The image should look like a professional engineering simulation result.
+      Return a JSON object with a "results" array containing the data points.
     `;
 
-    const response = await ai.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt: prompt,
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
       config: {
-        numberOfImages: 1,
-        aspectRatio: '16:9',
+        responseMimeType: 'application/json',
+        responseSchema: sensitivitySchema,
       },
     });
 
-    const base64Image = response.generatedImages[0]?.image?.imageBytes;
-    if (!base64Image) throw new Error("Failed to generate image");
+    const text = response.text;
+    if (!text) throw new Error("No sensitivity data received from AI.");
+    
+    const parsed = JSON.parse(text);
+    return parsed.results as SensitivityDataPoint[];
 
-    return `data:image/png;base64,${base64Image}`;
+  } catch (error) {
+    console.error("Sensitivity Analysis Error:", error);
+    throw error;
+  }
+};
+
+export const generateAeroFlowImage = async (params: CarParameters, track: Track): Promise<string> => {
+  try {
+    const ai = getAiClient();
+    const prompt = `
+      Create a futuristic, high-contrast CFD (Computational Fluid Dynamics) simulation image of a 2026 Formula 1 car, top-down view.
+      
+      Simulation Context:
+      - Circuit: ${track.name} (${track.country}).
+      - Environmental Physics: Simulate air density and skin friction corresponding to ${track.country}'s climate. Account for ambient track temperature affecting airflow viscosity.
+      
+      Aesthetics:
+      - Deep dark void/blueprint background.
+      - The car should be rendered as a sleek, metallic or wireframe silhouette.
+      - NEON COLORED aerodynamic streamlines (glowing cyan, electric blue, and intense red for high pressure areas) flowing dynamically over the body.
+      - High-tech, digital engineering look.
+      - **Particle Systems**: Integrate subtle, luminescent particle tracers within the streamlines. Use elongated motion-blur particles to denote high-velocity airflow (low pressure), and denser, slower-moving particle clusters in high-pressure drag zones (e.g., behind tires or rear wing).
+      
+      Parameter Visualization:
+      - Front Wing Angle: ${params.frontWingFlapAngle} degrees (show flow disruption at the nose).
+      - Downforce: ${params.aeroDownforce}/100 (if > 70, show intense red/orange pressure zones on wings/floor; if < 40, show mostly blue/green smooth flow).
+      - Drag: ${params.aeroDrag}/100 (visualize the wake/turbulence behind the car; larger/chaotic wake for high drag).
+      
+      The image should look like it came from advanced F1 simulation software with real-time particle physics.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: prompt }]
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: '16:9'
+        }
+      },
+    });
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+    }
+    
+    return '';
   } catch (error) {
     console.error("Image Gen Error:", error);
-    // Return null to handle gracefully in UI instead of crashing analysis
-    return '';
+    return ''; 
   }
 };

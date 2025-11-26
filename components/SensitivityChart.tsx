@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Label } from 'recharts';
-import { CarParameters, PerformanceMetrics } from '../types';
-import { analyzeCarPerformance } from '../services/geminiService';
+import { CarParameters, SensitivityDataPoint } from '../types';
+import { performSensitivityAnalysis } from '../services/geminiService';
 import { tracks } from '../data/tracks';
 
 interface SensitivityChartProps {
@@ -10,13 +11,6 @@ interface SensitivityChartProps {
 }
 
 type AnalyzableParam = 'aeroDownforce' | 'aeroDrag' | 'suspensionStiffness' | 'batteryEnergyDeployment' | 'chassisWeightKg';
-// Fix: Exclude non-plottable 'simulatedLapTime' from the metric type.
-type PlottableMetric = Exclude<keyof PerformanceMetrics, 'simulatedLapTime'>;
-
-interface SensitivityDataPoint {
-  paramValue: number;
-  metrics: PerformanceMetrics;
-}
 
 const PARAM_CONFIG: Record<AnalyzableParam, { name: string, min: number, max: number, unit: string }> = {
   aeroDownforce: { name: 'Aero Downforce', min: 20, max: 100, unit: '' },
@@ -25,20 +19,6 @@ const PARAM_CONFIG: Record<AnalyzableParam, { name: string, min: number, max: nu
   batteryEnergyDeployment: { name: 'Battery Deployment', min: 50, max: 100, unit: '%' },
   chassisWeightKg: { name: 'Chassis Weight', min: 700, max: 740, unit: 'kg' },
 };
-
-const METRIC_CONFIG: Record<PlottableMetric, { name: string, higherIsBetter: boolean }> = {
-    lapTimePotential: { name: 'Lap Potential', higherIsBetter: false },
-    topSpeedKmh: { name: 'Top Speed (km/h)', higherIsBetter: true },
-    maxCorneringG: { name: 'Max Cornering G', higherIsBetter: true },
-    tyreWearIndex: { name: 'Tyre Wear Index', higherIsBetter: false },
-    brakingEfficiency: { name: 'Braking Efficiency', higherIsBetter: true },
-    lowSpeedGrip: { name: 'Low Speed Grip', higherIsBetter: true },
-    energyRecoveryEfficiency: { name: 'Energy Recovery', higherIsBetter: true },
-    tractionScore: { name: 'Traction Score', higherIsBetter: true },
-    chassisResponsiveness: { name: 'Chassis Responsiveness', higherIsBetter: true },
-    highSpeedStability: { name: 'High-Speed Stability', higherIsBetter: true },
-};
-
 
 const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams, selectedTrackId }) => {
   const [selectedParam, setSelectedParam] = useState<AnalyzableParam>('aeroDownforce');
@@ -53,38 +33,26 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams, sele
 
     const track = tracks.find(t => t.id === selectedTrackId);
     if (!track) {
-      setError("Selected track not found for sensitivity analysis.");
+      setError("Selected track not found.");
       setIsLoading(false);
       return;
     }
 
     const config = PARAM_CONFIG[selectedParam];
     const steps = 5;
-    const range = config.max - config.min;
-    const stepValue = range / (steps - 1);
-    const paramValues = Array.from({ length: steps }, (_, i) => Math.round(config.min + i * stepValue));
 
     try {
-      const promises = paramValues.map(value => {
-        const newParams = { ...currentParams, [selectedParam]: value };
-        return analyzeCarPerformance(newParams, track);
-      });
+      // Use the batch analysis function instead of a loop
+      const results = await performSensitivityAnalysis(
+        currentParams,
+        track,
+        selectedParam,
+        config.min,
+        config.max,
+        steps
+      );
 
-      const results = await Promise.all(promises);
-      
-      const chartData = results
-        // Add robust filtering to prevent crashes from bad API responses
-        .filter(result => result && result.metrics) 
-        .map((result, index) => ({
-          paramValue: paramValues[index],
-          metrics: result.metrics,
-        }));
-
-      if (chartData.length < results.length) {
-        console.warn("Some sensitivity analysis points were filtered out due to invalid data.");
-      }
-
-      setData(chartData);
+      setData(results);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run sensitivity analysis.');
@@ -93,96 +61,134 @@ const SensitivityChart: React.FC<SensitivityChartProps> = ({ currentParams, sele
     }
   };
   
-  const chartData = useMemo(() => {
+  const formattedChartData = useMemo(() => {
     if (!data) return [];
-    // The filter in handleAnalyzeSensitivity ensures d.metrics is always defined here
     return data.map(d => ({
         paramValue: d.paramValue,
-        ...d.metrics,
+        topSpeedKmh: d.metrics.topSpeedKmh,
+        maxCorneringG: d.metrics.maxCorneringG,
+        lapTimePotential: d.metrics.lapTimePotential,
+        tyreWearIndex: d.metrics.tyreWearIndex,
     }));
   }, [data]);
+
+  const ChartDisplay = useMemo(() => {
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-blue-400/50">
+                 <div className="w-8 h-8 border-2 border-t-blue-500 rounded-full animate-spin mb-2"></div>
+                 <span className="text-xs uppercase tracking-widest animate-pulse">Computing Physics Model...</span>
+            </div>
+        );
+    }
+    
+    if (!data || data.length === 0) {
+        return (
+             <div className="flex flex-col items-center justify-center h-full text-gray-600">
+                <div className="text-4xl mb-2 opacity-50">⚡</div>
+                <p className="text-xs uppercase tracking-widest">Select Variable & Run Sweep</p>
+            </div>
+        );
+    }
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={formattedChartData} margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+          
+          <XAxis 
+            dataKey="paramValue" 
+            stroke="#6b7280" 
+            tick={{fontSize: 10}}
+            type="number"
+            domain={['dataMin', 'dataMax']}
+            allowDecimals={false}
+          >
+            <Label value={`${PARAM_CONFIG[selectedParam].name}`} offset={0} position="insideBottom" fill="#4b5563" fontSize={10} dy={15} />
+          </XAxis>
+          
+          {/* LEFT AXIS: Low values (G-Force, Indices 1-10) */}
+          <YAxis 
+            yAxisId="left" 
+            stroke="#9ca3af" 
+            tick={{fontSize: 10}} 
+            domain={[0, 12]} 
+            label={{ value: 'Index / G-Force', angle: -90, position: 'insideLeft', fill: '#4b5563', fontSize: 9 }}
+          />
+
+          {/* RIGHT AXIS: High values (Top Speed ~300) */}
+          <YAxis 
+            yAxisId="right" 
+            orientation="right" 
+            stroke="#3b82f6" 
+            tick={{fontSize: 10}} 
+            domain={['auto', 'auto']}
+            label={{ value: 'Speed (km/h)', angle: 90, position: 'insideRight', fill: '#3b82f6', fontSize: 9 }}
+          />
+
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#111827',
+              borderColor: '#374151',
+              borderRadius: '0.25rem',
+              fontSize: '11px'
+            }}
+            labelStyle={{ color: '#93c5fd', fontWeight: 'bold' }}
+            itemStyle={{ padding: 0 }}
+            formatter={(value: number) => value.toFixed(2)}
+          />
+          <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+          
+          {/* Plotted on Right Axis */}
+          <Line yAxisId="right" type="monotone" dataKey="topSpeedKmh" name="Top Speed (km/h)" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}} />
+          
+          {/* Plotted on Left Axis */}
+          <Line yAxisId="left" type="monotone" dataKey="maxCorneringG" name="Cornering G" stroke="#22d3ee" strokeWidth={2} dot={{r:3}} activeDot={{r:5}} />
+          <Line yAxisId="left" type="monotone" dataKey="lapTimePotential" name="Lap Potential (Low=Fast)" stroke="#a855f7" strokeWidth={2} dot={{r:3}} activeDot={{r:5}} />
+          <Line yAxisId="left" type="monotone" dataKey="tyreWearIndex" name="Tyre Wear Index" stroke="#f43f5e" strokeWidth={2} dot={{r:3}} activeDot={{r:5}} />
+          
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  }, [data, formattedChartData, isLoading, selectedParam]);
   
 
   return (
-    <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
-      <h2 className="text-2xl font-bold text-white mb-4 border-b border-gray-600 pb-2">
-        Parameter Sensitivity Analysis
-      </h2>
-      <div className="flex flex-col md:flex-row gap-4 mb-6 items-center">
-        <div className="flex-grow w-full md:w-auto">
-            <label htmlFor="param-select" className="block text-sm font-medium text-gray-300 mb-1">Analyze Parameter:</label>
-            <select
-            id="param-select"
-            value={selectedParam}
-            onChange={(e) => setSelectedParam(e.target.value as AnalyzableParam)}
-            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-            {Object.entries(PARAM_CONFIG).map(([key, { name }]) => (
-                <option key={key} value={key}>{name}</option>
-            ))}
-            </select>
+    <div className="bg-gray-800/60 backdrop-blur-md p-6 rounded-lg border border-gray-700/50 shadow-lg h-96 flex flex-col">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-4 border-b border-gray-700 pb-3 flex-shrink-0">
+        <h2 className="text-lg font-bold text-gray-200 uppercase tracking-widest flex items-center gap-2">
+           <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+           Parameter Sensitivity Sweep
+        </h2>
+        
+        <div className="flex flex-col md:flex-row gap-4 items-center w-full md:w-auto mt-2 md:mt-0">
+             <div className="flex items-center gap-2 w-full md:w-auto">
+                <span className="text-xs text-gray-400 uppercase whitespace-nowrap font-bold">Variable:</span>
+                <select
+                    value={selectedParam}
+                    onChange={(e) => setSelectedParam(e.target.value as AnalyzableParam)}
+                    className="bg-gray-900 border border-gray-600 text-gray-200 text-xs uppercase font-mono rounded p-1.5 focus:border-blue-500 outline-none"
+                >
+                    {Object.entries(PARAM_CONFIG).map(([key, { name }]) => (
+                        <option key={key} value={key}>{name}</option>
+                    ))}
+                </select>
+             </div>
+             
+             <button
+                onClick={handleAnalyzeSensitivity}
+                disabled={isLoading}
+                className="py-1.5 px-4 bg-blue-600/80 hover:bg-blue-500 text-white text-xs font-bold uppercase rounded border border-blue-500/50 transition-colors disabled:opacity-50 shadow-lg shadow-blue-900/20"
+             >
+                {isLoading ? 'Processing...' : 'Run Sweep'}
+            </button>
         </div>
-        <button
-          onClick={handleAnalyzeSensitivity}
-          disabled={isLoading}
-          className="w-full md:w-auto py-2 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors mt-2 md:mt-6"
-        >
-          {isLoading ? 'Analyzing...' : 'Run Analysis'}
-        </button>
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="text-red-400 text-xs mb-2 bg-red-900/20 p-2 rounded border border-red-500/30">{error}</p>}
       
-      <div className="h-96 w-full mt-4">
-        {!isLoading && !data && (
-             <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-                <p>Run an analysis to see how changing a parameter affects performance.</p>
-            </div>
-        )}
-        {isLoading && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                 <div className="w-12 h-12 border-4 border-dashed rounded-full animate-spin border-blue-500"></div>
-                 <p className="mt-4">Running AI simulations...</p>
-            </div>
-        )}
-        {data && (
-            <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-              <XAxis dataKey="paramValue" stroke="#9ca3af" domain={['dataMin', 'dataMax']}>
-                <Label value={`${PARAM_CONFIG[selectedParam].name} (${PARAM_CONFIG[selectedParam].unit})`} offset={-15} position="insideBottom" fill="#d1d5db" />
-              </XAxis>
-              <YAxis yAxisId="left" stroke="#9ca3af">
-                 <Label value="Metric Value" angle={-90} position="insideLeft" style={{ textAnchor: 'middle', fill: '#d1d5db' }} />
-              </YAxis>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(31, 41, 55, 0.8)',
-                  borderColor: '#4b5563',
-                  borderRadius: '0.5rem',
-                }}
-                labelStyle={{ color: '#ffffff', fontWeight: 'bold' }}
-                formatter={(value: number, name: string) => [value && typeof value.toFixed === 'function' ? value.toFixed(2) : value, name]}
-              />
-              <Legend wrapperStyle={{paddingTop: '20px'}} />
-              {Object.entries(METRIC_CONFIG).map(([key, {name}], index) => (
-                <Line 
-                    key={key}
-                    yAxisId="left" 
-                    type="monotone" 
-                    dataKey={key} 
-                    name={name}
-                    stroke={['#3b82f6', '#84cc16', '#ef4444', '#f97316', '#eab308', '#a855f7', '#14b8a6', '#ec4899', '#6366f1', '#f472b6'][index % 10]} 
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+      <div className="flex-grow w-full min-h-0">
+        {ChartDisplay}
       </div>
     </div>
   );

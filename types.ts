@@ -1,3 +1,4 @@
+
 export interface CarParameters {
   aeroDownforce: number; // 20-100 scale
   aeroDrag: number; // 20-100 scale (inversely related to downforce)
@@ -27,6 +28,11 @@ export interface PerformanceMetrics {
 export interface AnalysisResult {
   metrics: PerformanceMetrics;
   analysis: string;
+}
+
+export interface SensitivityDataPoint {
+  paramValue: number;
+  metrics: PerformanceMetrics;
 }
 
 export interface Track {

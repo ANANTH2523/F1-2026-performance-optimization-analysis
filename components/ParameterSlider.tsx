@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { InfoIcon } from './icons/InfoIcon';
 
@@ -44,34 +45,45 @@ const ParameterSlider: React.FC<ParameterSliderProps> = ({
   }, [min, max, optimalRange]);
   
   return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <div className="relative group flex items-center gap-1.5 cursor-help">
-          <label className="font-medium text-white">{label}</label>
-          {tooltipText && (
-            <>
-              <InfoIcon className="w-4 h-4 text-gray-400" />
-              <div className="absolute bottom-full left-0 mb-3 w-72 p-3 text-sm text-gray-200 bg-gray-900 border border-gray-600 rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10">
-                <p className="font-bold text-blue-400 mb-2 border-b border-gray-700 pb-1">Technical Briefing</p>
-                {tooltipText}
-                 <div className="absolute top-full left-4 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-gray-600"></div>
-              </div>
-            </>
-          )}
+    <div className="group space-y-2 py-1">
+      <div className="flex justify-between items-end">
+        <div className="flex items-center gap-2 cursor-help relative">
+            <span className="text-xs font-semibold text-gray-300 uppercase tracking-tight group-hover:text-blue-400 transition-colors">{label}</span>
+            {tooltipText && (
+                <div className="group/tooltip relative">
+                     <InfoIcon className="w-3.5 h-3.5 text-gray-600 hover:text-blue-400 transition-colors" />
+                     <div className="absolute bottom-full left-0 mb-2 w-64 p-3 text-xs text-gray-200 bg-gray-900/95 border border-gray-700 rounded shadow-xl backdrop-blur-sm opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                        <div className="font-bold text-blue-400 mb-1 border-b border-gray-700 pb-1 uppercase tracking-wider">Metric Definition</div>
+                        {tooltipText}
+                    </div>
+                </div>
+            )}
         </div>
-        <span className="px-2 py-1 text-sm font-mono rounded bg-gray-700 text-blue-400">
-          {displayValue ? displayValue(value) : `${value} ${unit}`}
-        </span>
+        <div className="font-mono text-sm font-bold text-blue-400 bg-blue-900/20 px-2 py-0.5 rounded border border-blue-900/30 min-w-[3rem] text-center">
+          {displayValue ? displayValue(value) : `${value}${unit}`}
+        </div>
       </div>
-      <div className="relative h-2 w-full flex items-center">
-        <div className="absolute w-full h-2 bg-gray-700 rounded-lg"></div>
+      
+      <div className="relative h-6 w-full flex items-center">
+        {/* Track Background */}
+        <div className="absolute w-full h-1 bg-gray-800 rounded-sm overflow-hidden">
+             {/* Fill from left to value */}
+             <div 
+                className="h-full bg-blue-900/50" 
+                style={{ width: `${((value - min) / (max - min)) * 100}%` }}
+             ></div>
+        </div>
+        
+        {/* Optimal Range Indicator */}
         {optimalRange && (
            <div
-            className="absolute h-2 bg-green-500/30 rounded-lg"
-            style={{ left: rangePercentage.left, width: rangePercentage.width }}
-            title={`Optimal range: ${optimalRange[0]}-${optimalRange[1]}`}
+            className="absolute h-1.5 bg-green-500/40 border-x border-green-500/60 z-10"
+            style={{ left: rangePercentage.left, width: rangePercentage.width, top: 'calc(50% - 3px)' }}
+            title={`Optimal: ${optimalRange[0]} - ${optimalRange[1]}`}
           ></div>
         )}
+
+        {/* The Input */}
         <input
           type="range"
           min={min}
@@ -79,10 +91,9 @@ const ParameterSlider: React.FC<ParameterSliderProps> = ({
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="relative w-full h-2 appearance-none cursor-pointer range-lg accent-blue-500 bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent"
+          className="relative w-full z-20"
         />
       </div>
-      <p className="text-xs text-gray-400">{description}</p>
     </div>
   );
 };
