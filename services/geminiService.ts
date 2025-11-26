@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CarParameters, AnalysisResult, Track, SensitivityDataPoint } from './types';
+import { CarParameters, AnalysisResult, Track, SensitivityDataPoint } from '../types';
 
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = import.meta.env.VITE_API_KEY;
   if (!apiKey) {
     throw new Error("API_KEY_MISSING");
   }
