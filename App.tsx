@@ -5,13 +5,13 @@ import ParameterSlider from './components/ParameterSlider';
 import AnalysisDisplay from './components/AnalysisDisplay';
 import PerformanceChart from './components/PerformanceChart';
 import { CarParameters, PerformanceMetrics } from './types';
-import { analyzeCarPerformance, generateAeroFlowImage } from './services/geminiService';
+import { analyzeCarPerformance } from './services/simulationEngine';
 import Loader from './components/Loader';
 import { AnalyzeIcon } from './components/icons/AnalyzeIcon';
 import { ExportIcon } from './components/icons/ExportIcon';
 import { SparklesIcon } from './components/icons/SparklesIcon';
 import { CompareIcon } from './components/icons/CompareIcon';
-import CarVisualization from './components/CarVisualization';
+import { AeroVisualizer } from './components/AeroVisualizer';
 import SensitivityChart from './components/SensitivityChart';
 import TyreAnalysis from './components/TyreAnalysis';
 import KeyMetricsDisplay from './components/KeyMetricsDisplay';
@@ -96,7 +96,6 @@ const App: React.FC = () => {
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [baselineMetrics, setBaselineMetrics] = useState<PerformanceMetrics | null>(null);
   const [analysis, setAnalysis] = useState<string>('');
-  const [flowImageUrl, setFlowImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,7 +176,6 @@ const App: React.FC = () => {
     setError(null);
     setMetrics(null);
     setAnalysis('');
-    setFlowImageUrl(null);
     
     const track = tracks.find(t => t.id === selectedTrackId);
     if (!track) {
@@ -187,26 +185,15 @@ const App: React.FC = () => {
     }
 
     try {
-      const [analysisResult, imageUrl] = await Promise.all([
-        analyzeCarPerformance(params, track),
-        generateAeroFlowImage(params, track)
-      ]);
+      const analysisResult = await analyzeCarPerformance(params, track);
       setMetrics(analysisResult.metrics);
       setAnalysis(analysisResult.analysis);
-      setFlowImageUrl(imageUrl);
     } catch (err) {
       let errorMessage = 'An unknown error occurred';
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-      
-      if (errorMessage.includes('API_KEY_MISSING')) {
-        setError(
-            'API Key Missing: Please create a .env file in the root directory with "API_KEY=your_actual_api_key".'
-        );
-      } else {
-        setError(errorMessage);
-      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -405,8 +392,8 @@ const App: React.FC = () => {
                 <>
                 {/* Top Row: Visuals & Chart */}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[400px]">
-                    <div className="h-full">
-                         <CarVisualization flowImageUrl={flowImageUrl} params={params} isLoading={isLoading} />
+                    <div className="h-full flex items-center justify-center p-2">
+                         <AeroVisualizer params={params} width={600} height={340} />
                     </div>
                     <div className="h-full">
                         <PerformanceChart metrics={metrics} baselineMetrics={baselineMetrics} />

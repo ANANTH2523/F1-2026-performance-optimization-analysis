@@ -17,21 +17,21 @@ interface KeyMetricProps {
 }
 
 const KeyMetric: React.FC<KeyMetricProps> = ({ icon, label, value, unit, description, delta }) => (
-    <div className="bg-gray-800/80 p-4 rounded-lg relative group border border-gray-700/50 hover:border-blue-500/50 transition-colors shadow-lg overflow-hidden h-full flex flex-col justify-center min-h-[120px]">
+    <div className="bg-gray-800/80 p-4 rounded-lg relative group border border-gray-700/50 hover:border-blue-500/50 transition-colors shadow-lg h-full flex flex-col justify-center min-h-[120px]">
         {/* Glow effect on hover */}
-        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 opacity-0 group-hover:opacity-10 blur transition duration-500 group-hover:duration-200"></div>
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 opacity-0 group-hover:opacity-10 blur transition duration-500 group-hover:duration-200 rounded-lg"></div>
         
-        <div className="relative bg-gray-900/90 h-full p-3 rounded flex items-center gap-4 z-10">
+        <div className="relative bg-gray-900/90 h-full p-3 rounded flex items-center gap-3 z-10">
             <div className="flex-shrink-0 text-gray-500 group-hover:text-blue-400 transition-colors">
                 {icon}
             </div>
             <div className="flex-grow min-w-0">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1 truncate">{label}</p>
-                <div className="flex items-baseline gap-2 flex-wrap">
-                    <p className="text-2xl lg:text-3xl font-mono font-bold text-white tracking-tight whitespace-nowrap">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1 leading-tight">{label}</p>
+                <div className="flex items-baseline gap-1 flex-wrap">
+                    <p className="text-xl sm:text-2xl xl:text-3xl font-mono font-bold text-white tracking-tight break-words">
                         {value}
                     </p>
-                    <span className="text-xs text-gray-500 font-mono">{unit}</span>
+                    <span className="text-[10px] sm:text-xs text-gray-500 font-mono">{unit}</span>
                 </div>
                 {delta && !delta.isNeutral && (
                     <div className={`text-xs font-bold font-mono mt-1 flex items-center gap-1 ${delta.isImprovement ? 'text-green-400' : 'text-red-400'}`}>
@@ -49,7 +49,7 @@ const KeyMetric: React.FC<KeyMetricProps> = ({ icon, label, value, unit, descrip
          <div className="absolute top-0 right-0 m-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
               <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
          </div>
-         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 p-2 text-[10px] text-center text-gray-200 bg-black/90 border border-gray-700 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50 backdrop-blur-sm shadow-xl">
+         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-3 text-xs leading-relaxed text-center text-gray-200 bg-gray-900/95 border border-gray-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50 backdrop-blur-md shadow-2xl whitespace-normal break-words">
             {description}
         </div>
     </div>

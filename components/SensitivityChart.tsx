@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Label } from 'recharts';
 import { CarParameters, SensitivityDataPoint } from '../types';
-import { performSensitivityAnalysis } from '../services/geminiService';
+import { performSensitivityAnalysis } from '../services/simulationEngine';
 import { tracks } from '../data/tracks';
 
 interface SensitivityChartProps {

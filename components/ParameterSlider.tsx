@@ -52,7 +52,7 @@ const ParameterSlider: React.FC<ParameterSliderProps> = ({
             {tooltipText && (
                 <div className="group/tooltip relative">
                      <InfoIcon className="w-3.5 h-3.5 text-gray-600 hover:text-blue-400 transition-colors" />
-                     <div className="absolute bottom-full left-0 mb-2 w-64 p-3 text-xs text-gray-200 bg-gray-900/95 border border-gray-700 rounded shadow-xl backdrop-blur-sm opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                     <div className="absolute bottom-full left-0 sm:left-1/2 sm:-translate-x-1/2 mb-2 w-[85vw] max-w-[280px] p-3 text-xs leading-relaxed text-gray-200 bg-gray-900/95 border border-gray-700 rounded-lg shadow-2xl backdrop-blur-md opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none z-[100] whitespace-normal break-words">
                         <div className="font-bold text-blue-400 mb-1 border-b border-gray-700 pb-1 uppercase tracking-wider">Metric Definition</div>
                         {tooltipText}
                     </div>
